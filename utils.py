@@ -9,7 +9,9 @@ import re
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
-ROOT = Path('/Volumes/INWT/Daten_NLP/') # encrypted folder!
+#ROOT = Path('/Volumes/INWT/Daten_NLP/') # encrypted folder!
+ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
+
 DATA_raw = ROOT / '200707_aachener_zeitung.txt' # original file
 DATA = ROOT / '200707_aachener_zeitung_modified.csv' # added and deleted columns, minimal preprocessed text
 META = ROOT / 'Dokumentation_Daten.txt'
