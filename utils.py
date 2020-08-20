@@ -10,7 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
 ROOT = Path('/Volumes/INWT/Daten_NLP/') # encrypted folder!
-DATA = ROOT / '200707_aachener_zeitung.txt'
+DATA_raw = ROOT / '200707_aachener_zeitung.txt' # original file
+DATA = ROOT / '200707_aachener_zeitung_modified.csv' # added and deleted columns, minimal preprocessed text
 META = ROOT / 'Dokumentation_Daten.txt'
 
 
@@ -44,6 +45,10 @@ def get_meta_dict():
         meta_dict = json.load(f)
     return meta_dict
 
+def get_meta_cat_file(meta_cat):
+    tmp_meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col=0)
+    return tmp_meta
+
 
 def add_meta_columns(df):
     
@@ -73,6 +78,8 @@ def add_meta_columns(df):
     df['nr_tokens_titelH1'] = [ len([ t for t in nltk.word_tokenize(titel) if t not in string.punctuation])
                                 for titel in df.titelH1 ]
     
+    # adding number of characters of text_preprocessed
+    df['nr_char'] = [ len(text) for text in df.text_preprocessed ]
     
     # adding also number of sentences and their mean length (in tokens without punctuation)
     for index, row in df.iterrows():
@@ -90,6 +97,9 @@ def add_meta_columns(df):
     # add a column: avg time divided by wordcount
     df['avgTimeOnPage/wordcount'] = df.avgTimeOnPage/df.wordcount
 
+    # add a column: avg time divided by nr_char
+    df['avgTimeOnPage/nr_char'] = df.avgTimeOnPage/df.nr_char
+    
     # add a column: pageviews - exits (das sind also die pageviews bei denen time gezählt wird)
     df['pageviews-exits'] = df.pageviews-df.exits
     
@@ -117,7 +127,7 @@ def get_set_of_meta_cat(meta_cat):
 def get_articles_where(df, meta_cat, label):
     meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col = 0)
     indices = meta.loc[meta[label] == 1].index.tolist()
-    return df.loc[indices].head()
+    return df.loc[indices]
     
     
     
