@@ -6,19 +6,20 @@ nltk.download('punkt')
 import torch
 import json
 import re
+import csv
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
-#ROOT = Path('/Volumes/INWT/Daten_NLP/') # encrypted folder!
-ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
+ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
+#ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 
-DATA_raw = ROOT / '200707_aachener_zeitung.txt' # original file
-DATA = ROOT / '200707_aachener_zeitung_modified.csv' # added and deleted columns, minimal preprocessed text
+DATA = ROOT / 'data'
 META = ROOT / 'Dokumentation_Daten.txt'
 
 
 def read_data(file):
-    raw = pd.read_csv(ROOT / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
+    raw = pd.read_csv(DATA / file, engine='python', quoting=csv.QUOTE_ALL, escapechar = '\\', index_col = 'articleId')
+    #raw = pd.read_csv(DATA / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
     return raw
 
     
@@ -37,6 +38,7 @@ def create_meta_dict():
                 var_name, var_description = re.split(': | - ',line)
                 meta_dict[var_name] = var_description
             line = fp.readline()
+    meta_dict['publisher'] = 'Angabe zum Publisher, bei dem der Artikel erschienen ist'
     with open('meta_dict.json', 'w') as f:
         json.dump(meta_dict, f)
     return meta_dict
@@ -55,19 +57,35 @@ def get_meta_cat_file(meta_cat):
 def add_meta_columns(df):
     
     df = df.fillna('') # replacing Nan with emtpy string
-    # add a colum with place (e.g. München/Stuttgart)
-    df['city'] = [ re.split('\(dpa',text)[0].strip() for text in df.text ]
+      
+    # add columns 'city' and 'text_preprocessed'
+    print("preprocessing text...")
+    for n, ID in enumerate(df.index):
+        print(n, end='\r')
+        raw_text = df.loc[ID, 'text']
+        raw_text = raw_text.replace('\xa0', ' ')
+        if "(dpa" in raw_text:
+            split = re.split(r'\(dpa\S*', raw_text) # split by "(dpa)", "(dpa\tmn)" and similar
+            city = split[0].strip()
+            text = split[1].strip()
+        else:
+            city = ""
+            text = raw_text
+        
+        if text.startswith("- "): # not very pretty but: remove "- " at the beginning...
+            text = text[2:]
+        df.loc[ID, 'city'] = city
+        
+        text = text.replace('\n', ' ').strip() # delete linebreaks
+        text = re.sub(' +', ' ', text) # just one space
+        df.loc[ID, 'text_preprocessed'] = text
     
-    # add a column with minimal preprocessed text
-    for i in df.index:
-        text = df.loc[i, 'text']
-        preprocessed = text.replace('\n', ' ').strip() # delete linebreaks
-        preprocessed = re.sub(' +', ' ', preprocessed) # just one space
-        preprocessed = preprocessed.split('tmn) - ')[-1] # delete city in front of text
-        df.loc[i, 'text_preprocessed'] = preprocessed
+    # deleting original 'text' to save space (good?)
+    df.drop(columns=['text'], inplace=True)
     
     # adding number of tokens and mean token length (ignoring punctuation)
     # (column "wordcount" already exists, slightly different outcome but okay)
+    print("counting tokens...")
     df['nr_tokens'] = [ len([ t for t in nltk.word_tokenize(text) if t not in string.punctuation])
                         for text in df.text_preprocessed ]
 
@@ -82,7 +100,8 @@ def add_meta_columns(df):
     
     # adding number of characters of text_preprocessed
     df['nr_char'] = [ len(text) for text in df.text_preprocessed ]
-    
+
+    print("counting sentences...")
     # adding also number of sentences and their mean length (in tokens without punctuation)
     for index, row in df.iterrows():
         text = df.loc[index, 'text_preprocessed']
@@ -96,11 +115,12 @@ def add_meta_columns(df):
             nr_tokens_per_sent.append(len(token_list))
         df.loc[index, 'mean_sentence_length'] = np.mean(nr_tokens_per_sent)
         
+    print("averaging avgTimeOnPage per tokens etc...")
     # add a column: avg time divided by wordcount
-    df['avgTimeOnPage/wordcount'] = df.avgTimeOnPage/df.wordcount
+    df['avgTimeOnPagePerNr_tokens'] = df.avgTimeOnPage/df.nr_tokens
 
     # add a column: avg time divided by nr_char
-    df['avgTimeOnPage/nr_char'] = df.avgTimeOnPage/df.nr_char
+    df['avgTimeOnPagePerNr_char'] = df.avgTimeOnPage/df.nr_char
     
     # add a column: pageviews - exits (das sind also die pageviews bei denen time gezählt wird)
     df['pageviews-exits'] = df.pageviews-df.exits
@@ -111,7 +131,7 @@ def add_meta_columns(df):
 def show_article(ID, df):
     #pageviews = df.loc[ID, 'pageviews']
     #print(f'pageviews: {pageviews}')
-    for m in ['pageviews', 'nr_tokens', 'nr_tokens_titelH1', 'nr_tokens_teaser', 'avgTimeOnPage/wordcount', 'stickiness']:
+    for m in ['pageviews', 'nr_tokens', 'nr_tokens_titelH1', 'nr_tokens_teaser', 'avgTimeOnPagePerNr_tokens', 'stickiness']:
         value = df.loc[ID, m]
         print(f'{m}: {value}')
     for c in ['titelH1', 'teaser', 'text_preprocessed']:
@@ -130,7 +150,7 @@ def get_articles_where(df, meta_cat, label):
     meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col = 0)
     indices = meta.loc[meta[label] == 1].index.tolist()
     return df.loc[indices]
-    
+  
     
     
     
