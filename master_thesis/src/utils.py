@@ -10,10 +10,11 @@ import csv
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
-ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
-#ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
+#ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
+ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 
-DATA = ROOT / 'data'
+#DATA = ROOT / 'data'
+DATA = ROOT / '200820_dataNLP'
 META = ROOT / 'Dokumentation_Daten.txt'
 
 
@@ -48,6 +49,7 @@ def get_meta_dict():
     with open('meta_dict.json', 'r') as f:
         meta_dict = json.load(f)
     return meta_dict
+
 
 def get_meta_cat_file(meta_cat):
     tmp_meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col=0)
@@ -150,7 +152,7 @@ def get_articles_where(df, meta_cat, label):
     meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col = 0)
     indices = meta.loc[meta[label] == 1].index.tolist()
     return df.loc[indices]
-  
+
     
     
     
