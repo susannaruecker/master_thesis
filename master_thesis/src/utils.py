@@ -3,11 +3,9 @@ import numpy as np
 import string
 import nltk
 nltk.download('punkt')
-import torch
 import json
 import re
 import csv
-from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
 #ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
@@ -17,6 +15,8 @@ ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 DATA = ROOT / '200820_dataNLP'
 META = ROOT / 'Dokumentation_Daten.txt'
 
+PROJECT_ROOT = Path(__file__).parents[2].resolve()
+OUTPUT = PROJECT_ROOT / 'master_thesis' / 'outputs' # to save tsv files and other stuff
 
 def read_data(file):
     raw = pd.read_csv(DATA / file, engine='python', quoting=csv.QUOTE_ALL, escapechar = '\\', index_col = 'articleId')
@@ -40,19 +40,19 @@ def create_meta_dict():
                 meta_dict[var_name] = var_description
             line = fp.readline()
     meta_dict['publisher'] = 'Angabe zum Publisher, bei dem der Artikel erschienen ist'
-    with open('meta_dict.json', 'w') as f:
+    with open(OUTPUT / 'meta_dict.json', 'w') as f:
         json.dump(meta_dict, f)
     return meta_dict
     
 
 def get_meta_dict():
-    with open('meta_dict.json', 'r') as f:
+    with open(OUTPUT / 'meta_dict.json', 'r') as f:
         meta_dict = json.load(f)
     return meta_dict
 
 
 def get_meta_cat_file(meta_cat):
-    tmp_meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col=0)
+    tmp_meta = pd.read_csv(OUTPUT / f'meta_file_{meta_cat}.csv', index_col=0)
     return tmp_meta
 
 
@@ -143,13 +143,13 @@ def show_article(ID, df):
     
 
 def get_set_of_meta_cat(meta_cat):
-    tmp_meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col=0)
+    tmp_meta = pd.read_csv(OUTPUT / f'meta_file_{meta_cat}.csv', index_col=0)
     columns = tmp_meta.columns.tolist()
     return columns
 
 
 def get_articles_where(df, meta_cat, label):
-    meta = pd.read_csv(f'meta_file_{meta_cat}.csv', index_col = 0)
+    meta = pd.read_csv(OUTPUT / f'meta_file_{meta_cat}.csv', index_col = 0)
     indices = meta.loc[meta[label] == 1].index.tolist()
     return df.loc[indices]
 
