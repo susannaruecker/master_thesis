@@ -6,8 +6,9 @@ from torch import nn, optim
 
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased' # 'distilbert-base-german-cased'
 
-def get_model_and_tokenizer():
-    model = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
+def get_model_and_tokenizer(pretrained = PRE_TRAINED_MODEL_NAME): # 'distilbert-base-german-cased'
+
+    model = BertForSequenceClassification.from_pretrained(pretrained, # use path to load saved model, otherwise PRE_...
                                                           num_labels = 1, # turns "classification" into regression?
                                                           output_attentions = False,
                                                           output_hidden_states = False,
@@ -18,7 +19,7 @@ def get_model_and_tokenizer():
 
 
 
-# das ist umständlich (und auch falsch), ich habe stattdessen bereits BertForSequenceClassification genommen
+# das nachfolgende ist umständlich (und vielleicht auch falsch), ich habe stattdessen bereits BertForSequenceClassification genommen
 # https://huggingface.co/transformers/v2.2.0/model_doc/bert.html#transformers.BertForSequenceClassification
 
 #class Bert_regression(nn.Module):

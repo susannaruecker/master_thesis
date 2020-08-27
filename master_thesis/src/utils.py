@@ -2,11 +2,16 @@ import pandas as pd
 import numpy as np
 import string
 import nltk
-nltk.download('punkt')
+#nltk.download('punkt')
 import json
 import re
 import csv
 from pathlib import Path
+import spacy
+import wget
+import gzip
+import os
+import os.path
 
 #ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
 ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
@@ -23,7 +28,27 @@ def read_data(file):
     #raw = pd.read_csv(DATA / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
     return raw
 
-    
+def get_conditioned_df(min_pageviews = 100,
+                       min_nr_tokens = 10,
+                       min_time = 0.1,
+                       max_time =  2):
+
+    # get raw data
+    df = pd.read_csv(DATA / 'combined.tsv', sep='\t')
+    #df = df.fillna('')  # replacing Nan with emtpy string
+    print("Shape of raw df:", df.shape)
+
+    # conditioning on columns and their values
+
+    df = df.loc[(df['pageviews'] >= min_pageviews) &
+                (df['nr_tokens'] >= min_nr_tokens) &  # to delete articles without text or erroneous data
+                (df['avgTimeOnPagePerNr_tokens'] <= max_time) &  # hier war vorher 4
+                (df['avgTimeOnPagePerNr_tokens'] >= min_time)  # hier war vorher 0.01
+                ]
+    print("Remaining df after conditioning:", df.shape)
+    return df
+
+
 def create_meta_dict():
     # Zusätzliche Information zu den Spalten 2-11 finden sich unter
     # https://ga-dev-tools.appspot.com/dimensions-metrics-explorer/?
@@ -153,6 +178,103 @@ def get_articles_where(df, meta_cat, label):
     indices = meta.loc[meta[label] == 1].index.tolist()
     return df.loc[indices]
 
+
+#class Preprocessor():
+#    def __init__(self):
+#        self.nlp = spacy.load("de_core_news_sm", disable=['parser', 'ner'])
+#        #self.nlp = spacy.load("de_core_news_md", disable=['parser', 'ner'])
+#
+#    def __call__(self, doc):
+#        rt = []
+#        doc = self.nlp(doc)
+#        for token in doc:
+#            rt.append(token.lemma_.lower()) # stopwords stay in, (skleans CountVectorizer deletes it later)
+#
+#        return " ".join(rt)
+
+
+class Preprocessor():
+    def __init__(self, delete_stopwords=False, lemmatize=False, delete_punctuation=False):
+        self.nlp = spacy.load("de_core_news_sm", disable=['parser', 'ner'])
+        # self.nlp = spacy.load("de_core_news_md", disable=['parser', 'ner'])
+        self.delete_stopwords = delete_stopwords
+        self.lemmatize = lemmatize
+        self.delete_punctuation = delete_punctuation
+        self.stopwords = nltk.corpus.stopwords.words('german')
+
+    def __call__(self, doc):
+        rt = []
+        doc = self.nlp(doc)
+
+        if self.lemmatize == True:
+            for token in doc:
+                rt.append(token.lemma_.lower())
+        else:
+            for token in doc:
+                rt.append(token.text)
+
+        if self.delete_punctuation == True:
+            rt = [t for t in rt if t not in string.punctuation]
+
+        if self.delete_stopwords == True:
+            if self.lemmatize == True:
+                self.stopwords = [self.nlp(s)[0].lemma_ for s in self.stopwords]
+            rt = [t for t in rt if t not in self.stopwords]
+
+        return " ".join(rt)
+
+
+def load_fasttext_vectors(limit=None):
+    # if necessary download german fastText Embeddings
+    url = 'https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.de.300.vec.gz'
+
+    # target_path = '/Users/Sanna/data/cc.de.300.vec.gz'                 # Laptop
+    target_path = '/home/ruecker/data/fasttext_vectors/cc.de.300.vec.gz' # JULIE
+
+    if not os.path.isfile(target_path):
+        print('downloading vectors...')
+        wget.download(url, out=target_path)
+        print('done')
+    else:
+        print('file already exists')
+
+    print('loading embeddings ...')
+    f = gzip.open(target_path, 'rb')
+    n, d = map(int, f.readline().split())
+    data = {}
+    counter = 0
+    for line in f:
+        line = line.decode()
+        tokens = line.rstrip().split(' ')
+        data[tokens[0]] = np.array(tokens[1:], dtype=np.float32)
+        if limit:
+            if counter >= limit:
+                break
+            else:
+                counter += 1
+    f.close()
+    print('done')
+    return data
+
+
+def get_averaged_vector(text, preprocessor, embs):
+    vector = np.zeros(300)
+    text_preprocessed = preprocessor(text)
+    tokens = text_preprocessed.split() # preprocessor returns string with " " as separator, so needs to be split up
+    counter = 0
+    for t in tokens:
+        #print(t)
+        if t in embs:
+            vector += embs.get(t)
+            counter +=1
+    #print(counter)
+    if counter !=0:
+        vector = vector/counter
+    return vector
+
     
-    
-    
+
+#test = get_conditioned_df()
+#print(test.shape)
+#print(test[['pageviews','avgTimeOnPagePerNr_tokens']].describe().round(2))
+

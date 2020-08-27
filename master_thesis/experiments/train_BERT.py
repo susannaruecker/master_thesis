@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import torch
 from torch import optim, nn
 import pandas as pd
@@ -9,26 +11,26 @@ assert torch.cuda.is_available()
 device = torch.device('cuda:0')
 print("Device is: ", device)
 
-# get pretrained model and tokenizer
+# get pretrained model and tokenizer from huggingface's transformer library
 model, tokenizer = models.get_model_and_tokenizer()
 model.to(device)
 
 # try out tokenizer
-sample_text = "Das hier ist ein deutscher Beispieltext. Und einen zweiten müssen wir auch noch haben."
+#sample_text = "Das hier ist ein deutscher Beispieltext. Und einen zweiten müssen wir auch noch haben."
 #tokens = tokenizer.tokenize(sample_text) # just tokenizes
 #token_ids = tokenizer.convert_tokens_to_ids(tokens)
 #ids = tokenizer.encode(sample_text) # already adds special tokens
-encoded_plus = tokenizer.encode_plus(sample_text,
-                                     max_length = 10,
-                                     return_token_type_ids=False,
-                                     pad_to_max_length=True,
-                                     truncation=True,
-                                     return_attention_mask=True,)
+#encoded_plus = tokenizer.encode_plus(sample_text,
+#                                     max_length = 10,
+#                                     return_token_type_ids=False,
+#                                     pad_to_max_length=True,
+#                                     truncation=True,
+#                                     return_attention_mask=True,)
 
 #print(tokens)
 #print(token_ids)
 #print(ids)
-print("Testing the tokenizer:" , encoded_plus)
+#print("Testing the tokenizer:" , encoded_plus)
 
 #tokenizer.get_vocab() # shows tokenizer vocab (subwords!)
 #tokenizer.sep_token, tokenizer.sep_token_id, tokenizer.cls_token, tokenizer.cls_token_id, tokenizer.pad_token, tokenizer.pad_token_id
@@ -40,20 +42,23 @@ df = df.fillna('') # replacing Nan with emtpy string
 print("Shape of raw df:", df.shape)
 
 # just take articles with ...
-df = df.loc[(df['pageviews'] >= 20) &
-            (df['avgTimeOnPagePerNr_tokens'] <= 4) &
-            (df['avgTimeOnPagePerNr_tokens'] >= 0.01)
+df = df.loc[(df['pageviews'] >= 100) & # hier war vorher 20
+            #(df['publisher'] == 'bonn') & # das hier war für weniger Daten zum Fehlerfinden
+            (df['nr_tokens'] >= 10) &  # to delete articles without text or false text
+            (df['avgTimeOnPagePerNr_tokens'] <= 2) & # hier war vorher 4
+            (df['avgTimeOnPagePerNr_tokens'] >= 0.1) # hier war vorher 0.01
             ]
 print("Remaining df after conditioning:", df.shape)
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-BATCH_SIZE = 12
+BATCH_SIZE = 6
+MAX_LEN = 512
 dl_train, dl_dev, dl_test = data.create_DataLoaders(df = df,
-                                                    target = 'avgTimeOnPagePerNr_tokens',
-                                                    text_base = 'text_preprocessed', # 'titelH1',
+                                                    target = 'avgTimeOnPagePerNr_tokens', # 'avgTimeOnPagePerNr_tokens',
+                                                    text_base = 'text_preprocessed', # 'text_preprocessed', # 'titelH1',
                                                     tokenizer = tokenizer,
-                                                    max_len = 100,            # change depending on used text_base!
+                                                    max_len = MAX_LEN,
                                                     batch_size = BATCH_SIZE)
 
 # have a look at one batch in dl_train to see if shapes make sense
@@ -68,16 +73,17 @@ print(attention_mask.shape)
 print(data['target'].shape)
 
 # loss and optimizer
+optimizer = optim.AdamW(model.parameters(), lr=1e-5)
 
-optimizer = optim.Adam(model.parameters(), lr=1e-5)
-#optimizer = optim.AdamW(net.parameters(), lr=0.001)
-#optimizer = AdamW(model.parameters(),lr=1e-5)
-
+#LEARNING_RATE = 0.001 #0.001 # 0.00001
+#optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+#optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+#optimizer = optim.AdamW(model.parameters(), lr=1e-5)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
 
-EPOCHS = 10
+EPOCHS = 5 #15
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -94,6 +100,7 @@ for epoch in range(EPOCHS):
         targets = d["target"].to(device)
         # print(targets.shape)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)[0]  # stimmt das so? ist [0] die logits?
+        #print(outputs[:10])
         # print(outputs.shape)
 
         loss = loss_fn(outputs, targets)
@@ -104,8 +111,9 @@ for epoch in range(EPOCHS):
         optimizer.step()
         optimizer.zero_grad()
 
-        # print(np.mean(train_losses))
-    print("Mean train loss:", np.mean(train_losses))
+        if nr%50 == 0: # every 100 batches print
+            print(f"mean train loss at batch {nr}:", np.mean(train_losses))
+    print("Mean train loss epoch:", np.mean(train_losses))
 
     ### EVALUATING on dev
     print("evaluating")
@@ -119,8 +127,14 @@ for epoch in range(EPOCHS):
             attention_mask = d["attention_mask"].to(device)
             targets = d["target"].to(device)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)[0]  # stimmt das so?
-
+            #print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
-            # print(np.mean(eval_losses))
         print("Mean eval loss:", np.mean(eval_losses))
+
+#print("saving model")
+model.save_pretrained(utils.OUTPUT / 'saved_models' / f'BERT_{str(MAX_LEN)}')
+
+print("BATCH_SIZE:", BATCH_SIZE)
+print("MAX_LEN: ", MAX_LEN)
+print(df.shape)
