@@ -10,7 +10,7 @@ print("Device is: ", device)
 
 # load the trained and saved model
 # tokenizer is the unchanged one from huggingface
-MAX_LEN = 300
+MAX_LEN = 512
 
 model, tokenizer = models.get_model_and_tokenizer(utils.OUTPUT / 'saved_models' / f'BERT_{str(MAX_LEN)}')
 model.to(device)
@@ -32,12 +32,12 @@ print("Remaining df after conditioning:", df.shape)
 
 # load Dataloader for dev-Set (batch size in interference can be big, no calculation needed)
 BATCH_SIZE = 200
-_, dl_dev, _ = data.create_DataLoaders(df = df,
-                                       target = 'avgTimeOnPagePerNr_tokens', #'avgTimeOnPagePerNr_tokens',
-                                       text_base = 'text_preprocessed',# text_preprocessed',
-                                       tokenizer = tokenizer,
-                                       max_len = MAX_LEN,
-                                       batch_size = BATCH_SIZE)
+_, dl_dev, _ = data.create_DataLoaders_BERT(df = df,
+                                            target = 'avgTimeOnPagePerNr_tokens',  #'avgTimeOnPagePerNr_tokens',
+                                            text_base = 'text_preprocessed',  # text_preprocessed',
+                                            tokenizer = tokenizer,
+                                            max_len = MAX_LEN,
+                                            batch_size = BATCH_SIZE)
 
 pred = []
 true = []
@@ -66,6 +66,7 @@ print(len(true))
 print("Pearson's r on whole dev set:", st.pearsonr(pred, true))
 # bei max_len 100 (0.46954919345639684, 7.58807236498442e-71) also ganz okay, ähnlich wie BOW
 # bei max_len 200 (0.5467132606724006, 3.380111928800224e-100) also ziemlich viel besser
-# bei max_len 300 (0.5927131137308533, 1.0772004471333138e-121)s
+# bei max_len 300 (0.5927131137308533, 1.0772004471333138e-121)
+# bei max_len 512 (0.629376173357152, 1.727308917370859e-141)
 
 #TODO: true und pred plotten

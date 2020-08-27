@@ -2,9 +2,10 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 import numpy as np
+from master_thesis.src import utils
 
 
-class INWT_Dataset(Dataset):
+class INWT_Dataset_BERT(Dataset):
 
     def __init__(self, df, target, text_base, tokenizer, max_len):
         self.df = df
@@ -37,6 +38,35 @@ class INWT_Dataset(Dataset):
                 }
 
 
+class INWT_Dataset_CNN(Dataset):
+
+    def __init__(self, df, target, text_base, tokenizer, max_len, embs):
+        self.df = df
+        self.text_base = text_base
+        self.target = target
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+        self.embs = embs
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, item):
+        text = str(self.df.loc[item, self.text_base])
+        target = np.array(self.df.loc[item, self.target])
+        input_matrix = utils.get_embedding_matrix(text = text,
+                                                  tokenizer = self.tokenizer,
+                                                  embs = self.embs,
+                                                  fixed_length=self.max_len)
+
+        # TODO: hier padding/trimming zu fixed length und embedding machen?
+
+        return {#'text': text,
+                'input_matrix': input_matrix, # TODO: muss man hier irgndwie noch einen torch.tensor draus machen?
+                'target': torch.tensor(target, dtype=torch.float).unsqueeze(dim=-1) # unsqueezing so shape (batch_size,1)
+                }
+
+
 def create_train_dev_test(df, random_seed = 123):
     df_train, df_test = train_test_split(df, test_size=0.2, random_state=random_seed, shuffle=True)
     df_dev, df_test = train_test_split(df_test, test_size=0.5, random_state=random_seed, shuffle=True)
@@ -47,26 +77,58 @@ def create_train_dev_test(df, random_seed = 123):
     return df_train, df_dev, df_test
 
 
-def create_DataLoaders(df, target, text_base, tokenizer, max_len, batch_size):
+def create_DataLoaders_BERT(df, target, text_base, tokenizer, max_len, batch_size):
 
     df_train, df_dev, df_test = create_train_dev_test(df = df, random_seed = 123)
 
     # creating DataSets
-    ds_train = INWT_Dataset(df=df_train,
-                            target=target,
-                            text_base=text_base,
-                            tokenizer=tokenizer,
-                            max_len=max_len)
-    ds_dev = INWT_Dataset(df=df_dev,
-                          target=target,
-                          text_base=text_base,
-                          tokenizer=tokenizer,
-                          max_len=max_len)
-    ds_test = INWT_Dataset(df=df_test,
-                           target=target,
-                           text_base=text_base,
-                           tokenizer=tokenizer,
-                           max_len=max_len)
+    ds_train = INWT_Dataset_BERT(df=df_train,
+                                 target=target,
+                                 text_base=text_base,
+                                 tokenizer=tokenizer,
+                                 max_len=max_len)
+    ds_dev = INWT_Dataset_BERT(df=df_dev,
+                               target=target,
+                               text_base=text_base,
+                               tokenizer=tokenizer,
+                               max_len=max_len)
+    ds_test = INWT_Dataset_BERT(df=df_test,
+                                target=target,
+                                text_base=text_base,
+                                tokenizer=tokenizer,
+                                max_len=max_len)
+
+    # creating DataLoaders
+    dl_train = DataLoader(ds_train, batch_size=batch_size, num_workers=4, shuffle=True)
+    dl_dev = DataLoader(ds_dev, batch_size=batch_size, num_workers=4)
+    dl_test = DataLoader(ds_test, batch_size=batch_size, num_workers=4)
+
+    return dl_train, dl_dev, dl_test
+
+
+def create_DataLoaders_CNN(df, target, text_base, tokenizer, max_len, batch_size, embs):
+
+    df_train, df_dev, df_test = create_train_dev_test(df = df, random_seed = 123)
+
+    # creating DataSets
+    ds_train = INWT_Dataset_CNN(df=df_train,
+                                target=target,
+                                text_base=text_base,
+                                tokenizer=tokenizer,
+                                max_len=max_len,
+                                embs=embs)
+    ds_dev = INWT_Dataset_CNN(df=df_dev,
+                              target=target,
+                              text_base=text_base,
+                              tokenizer=tokenizer,
+                              max_len=max_len,
+                              embs = embs)
+    ds_test = INWT_Dataset_CNN(df=df_test,
+                               target=target,
+                               text_base=text_base,
+                               tokenizer=tokenizer,
+                               max_len=max_len,
+                               embs = embs)
 
     # creating DataLoaders
     dl_train = DataLoader(ds_train, batch_size=batch_size, num_workers=4, shuffle=True)

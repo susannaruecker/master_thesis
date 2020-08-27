@@ -29,6 +29,7 @@ def read_data(file):
     return raw
 
 def get_conditioned_df(min_pageviews = 100,
+                       max_pageviews = 1000000000, # dummy max_pageviews
                        min_nr_tokens = 10,
                        min_time = 0.1,
                        max_time =  2):
@@ -41,6 +42,7 @@ def get_conditioned_df(min_pageviews = 100,
     # conditioning on columns and their values
 
     df = df.loc[(df['pageviews'] >= min_pageviews) &
+                (df['pageviews'] <= max_pageviews) &
                 (df['nr_tokens'] >= min_nr_tokens) &  # to delete articles without text or erroneous data
                 (df['avgTimeOnPagePerNr_tokens'] <= max_time) &  # hier war vorher 4
                 (df['avgTimeOnPagePerNr_tokens'] >= min_time)  # hier war vorher 0.01
@@ -108,7 +110,7 @@ def add_meta_columns(df):
         df.loc[ID, 'text_preprocessed'] = text
     
     # deleting original 'text' to save space (good?)
-    df.drop(columns=['text'], inplace=True)
+    #df.drop(columns=['text'], inplace=True)
     
     # adding number of tokens and mean token length (ignoring punctuation)
     # (column "wordcount" already exists, slightly different outcome but okay)
@@ -272,9 +274,32 @@ def get_averaged_vector(text, preprocessor, embs):
         vector = vector/counter
     return vector
 
-    
 
-#test = get_conditioned_df()
+# feature extraction for CNN: matrix with embedding of tokens, padded/trimmed to fixed_len
+def get_embedding_matrix(text, tokenizer, embs, fixed_length=10):
+    if tokenizer is None: # use default (spacy) tokenizer
+        nlp = spacy.load("de_core_news_sm", disable=['parser', 'ner'])
+        tokenizer = nlp.Defaults.create_tokenizer(nlp)
+        tokens = tokenizer(text)
+        tokens = [ t.text for t in tokens ] # spacy returns objects, not tokens directly
+    else: # if another tokenizer is given
+        tokens = tokenizer(text)
+
+    embs_dim = len(embs.get('und')) # take dummy entry to get dimensions of embs
+    matrix = np.zeros((fixed_length, embs_dim))
+    for i, t in enumerate(tokens):
+        if i >= fixed_length:
+            break
+        if t in embs:
+            vector = embs.get(t)
+        else:
+            vector = np.zeros(embs_dim)
+        matrix[i] = vector
+
+    return matrix # matrix.T ?
+
+
+#test = get_conditioned_df(min_pageviews = 100, max_pageviews= 2000)
 #print(test.shape)
 #print(test[['pageviews','avgTimeOnPagePerNr_tokens']].describe().round(2))
 

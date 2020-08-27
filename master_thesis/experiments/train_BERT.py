@@ -54,12 +54,12 @@ print("Remaining df after conditioning:", df.shape)
 
 BATCH_SIZE = 6
 MAX_LEN = 512
-dl_train, dl_dev, dl_test = data.create_DataLoaders(df = df,
-                                                    target = 'avgTimeOnPagePerNr_tokens', # 'avgTimeOnPagePerNr_tokens',
-                                                    text_base = 'text_preprocessed', # 'text_preprocessed', # 'titelH1',
-                                                    tokenizer = tokenizer,
-                                                    max_len = MAX_LEN,
-                                                    batch_size = BATCH_SIZE)
+dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df = df,
+                                                         target = 'avgTimeOnPagePerNr_tokens',  # 'avgTimeOnPagePerNr_tokens',
+                                                         text_base = 'text_preprocessed',  # 'text_preprocessed', # 'titelH1',
+                                                         tokenizer = tokenizer,
+                                                         max_len = MAX_LEN,
+                                                         batch_size = BATCH_SIZE)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
