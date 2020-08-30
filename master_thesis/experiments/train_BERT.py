@@ -4,6 +4,7 @@ import torch
 from torch import optim, nn
 import pandas as pd
 import numpy as np
+import scipy.stats as st
 
 from master_thesis.src import utils, data, models
 
@@ -36,19 +37,8 @@ model.to(device)
 #tokenizer.sep_token, tokenizer.sep_token_id, tokenizer.cls_token, tokenizer.cls_token_id, tokenizer.pad_token, tokenizer.pad_token_id
 
 
-# get raw data
-df = pd.read_csv(utils.DATA / 'combined.tsv', sep = '\t')
-df = df.fillna('') # replacing Nan with emtpy string
-print("Shape of raw df:", df.shape)
-
-# just take articles with ...
-df = df.loc[(df['pageviews'] >= 100) & # hier war vorher 20
-            #(df['publisher'] == 'bonn') & # das hier war für weniger Daten zum Fehlerfinden
-            (df['nr_tokens'] >= 10) &  # to delete articles without text or false text
-            (df['avgTimeOnPagePerNr_tokens'] <= 2) & # hier war vorher 4
-            (df['avgTimeOnPagePerNr_tokens'] >= 0.1) # hier war vorher 0.01
-            ]
-print("Remaining df after conditioning:", df.shape)
+# get data (already conditionend on min_pageviews etc)
+df = utils.get_conditioned_df()
 
 # building train-dev-test split, their DataSets and DataLoaders
 
@@ -111,7 +101,7 @@ for epoch in range(EPOCHS):
         optimizer.step()
         optimizer.zero_grad()
 
-        if nr%50 == 0: # every 100 batches print
+        if nr%50 == 0: # every 50 batches print
             print(f"mean train loss at batch {nr}:", np.mean(train_losses))
     print("Mean train loss epoch:", np.mean(train_losses))
 
@@ -119,6 +109,9 @@ for epoch in range(EPOCHS):
     print("evaluating")
     model = model.eval()
     eval_losses = []
+
+    pred = []  # for calculating Pearson's r on dev in evaluation per epoch
+    true = []
 
     with torch.no_grad():
         for nr, d in enumerate(dl_dev):
@@ -130,7 +123,13 @@ for epoch in range(EPOCHS):
             #print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
+
+            outputs = outputs.squeeze().cpu()
+            targets = targets.squeeze().cpu()
+            pred.extend(outputs)
+            true.extend(targets)
         print("Mean eval loss:", np.mean(eval_losses))
+        print("Pearson's r on dev set:", st.pearsonr(pred, true))
 
 #print("saving model")
 model.save_pretrained(utils.OUTPUT / 'saved_models' / f'BERT_{str(MAX_LEN)}')

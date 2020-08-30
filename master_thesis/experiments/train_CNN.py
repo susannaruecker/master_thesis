@@ -4,6 +4,7 @@ import torch
 from torch import optim, nn
 import pandas as pd
 import numpy as np
+import scipy.stats as st
 
 from master_thesis.src import utils, data, models
 
@@ -14,12 +15,13 @@ print("Device is: ", device)
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
 
-embs = utils.load_fasttext_vectors(limit = 1000)
+embs = utils.load_fasttext_vectors(limit = None)
+EMBS_DIM = 300
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-BATCH_SIZE = 6
-MAX_LEN = 30
+BATCH_SIZE = 12
+MAX_LEN = 600
 dl_train, dl_dev, dl_test = data.create_DataLoaders_CNN(df = df,
                                                         target = 'avgTimeOnPagePerNr_tokens',  # 'avgTimeOnPagePerNr_tokens',
                                                         text_base = 'text_preprocessed',  # 'text_preprocessed', # 'titelH1',
@@ -36,15 +38,22 @@ print(input_matrix.shape)
 #print(data['target'])
 print(data['target'].shape)
 
-model = models.CNN(num_outputs=1, fixed_length=MAX_LEN)
+#model = models.CNN(num_outputs=1, embs_dim=EMBS_DIM)
+model = models.CNN(num_outputs = 1,
+                   embs_dim = EMBS_DIM,
+                   filter_sizes=[3, 4, 5],
+                   num_filters=[100,100,100]
+                   )
+model.to(device)
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=1e-5)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3) # beim anderen lr=1e-5
+                                                     # das Tutorial nutzt optim.Adadelta(cnn_model.parameters(), lr=0.001, rho=0.95)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
 
-EPOCHS = 5 #15
+EPOCHS = 3 #15
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -71,7 +80,7 @@ for epoch in range(EPOCHS):
         optimizer.step()
         optimizer.zero_grad()
 
-        if nr%50 == 0: # every 100 batches print
+        if nr%50 == 0: # every 50 batches print
             print(f"mean train loss at batch {nr}:", np.mean(train_losses))
     print("Mean train loss epoch:", np.mean(train_losses))
 
@@ -79,6 +88,9 @@ for epoch in range(EPOCHS):
     print("evaluating")
     model = model.eval()
     eval_losses = []
+
+    pred = []  # for calculating Pearson's r on dev in evaluation per epoch
+    true = []
 
     with torch.no_grad():
         for nr, d in enumerate(dl_dev):
@@ -89,10 +101,22 @@ for epoch in range(EPOCHS):
             #print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
-        print("Mean eval loss:", np.mean(eval_losses))
 
-#print("saving model")
-#model.save_pretrained(utils.OUTPUT / 'saved_models' / f'CNN_{str(MAX_LEN)}')
+            outputs = outputs.squeeze().cpu()
+            targets = targets.squeeze().cpu()
+            pred.extend(outputs)
+            true.extend(targets)
+        print("Mean eval loss:", np.mean(eval_losses))
+        print("Pearson's r on dev set:", st.pearsonr(pred, true))
+
+print("saving model")
+torch.save(model.state_dict(), utils.OUTPUT / 'saved_models' / f'CNN_{str(MAX_LEN)}.pt')
+
+# to load model again:
+#model = models.CNN(num_outputs=1, embs_dim=EMBS_DIM)
+#model.load_state_dict(torch.load(utils.OUTPUT / 'saved_models' / f'CNN_{str(MAX_LEN)}.pt)
+#model.eval()
+
 
 print("BATCH_SIZE:", BATCH_SIZE)
 print("MAX_LEN: ", MAX_LEN)

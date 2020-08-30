@@ -255,7 +255,10 @@ def load_fasttext_vectors(limit=None):
             else:
                 counter += 1
     f.close()
-    print('done')
+    if limit:
+        print(f"done loading embs WITH LIMIT {str(limit)}")
+    else:
+        print('done loading embs FULL')
     return data
 
 

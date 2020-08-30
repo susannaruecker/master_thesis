@@ -62,7 +62,7 @@ class INWT_Dataset_CNN(Dataset):
         # TODO: hier padding/trimming zu fixed length und embedding machen?
 
         return {#'text': text,
-                'input_matrix': input_matrix, # TODO: muss man hier irgndwie noch einen torch.tensor draus machen?
+                'input_matrix': torch.tensor(input_matrix, dtype=torch.float),
                 'target': torch.tensor(target, dtype=torch.float).unsqueeze(dim=-1) # unsqueezing so shape (batch_size,1)
                 }
 

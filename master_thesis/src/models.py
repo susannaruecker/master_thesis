@@ -4,6 +4,7 @@ from transformers import BertModel, BertTokenizer, BertForSequenceClassification
 import torch
 from torch import nn, optim
 import torch.nn.functional as F
+import numpy as np
 
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased' # 'distilbert-base-german-cased'
 
@@ -43,51 +44,56 @@ def get_model_and_tokenizer(pretrained = PRE_TRAINED_MODEL_NAME): # 'distilbert-
 #model = model.to(device)
 
 
-
+# https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
+# scheint mir ein gutes Tutorial, vielleicht so nachbauen?
 class CNN(nn.Module):
-    def __init__(self, num_outputs, fixed_length):  # fixed_length to pad or trim text to
+    def __init__(self, num_outputs,
+                       embs_dim,
+                       filter_sizes=[3, 4, 5],
+                       num_filters=[100,100,100]
+                       ):
         super(CNN, self).__init__()
+        self.embs_dim = embs_dim
+        self.num_outputs = num_outputs
+        self.filter_sizes = filter_sizes
+        self.num_filters = num_filters
 
-        self.conv1 = nn.Conv2d(300, 128, kernel_size= (1, 300), stride=1, padding=0)
-        self.conv2 = nn.Conv2d(300, 128, kernel_size= (2, 300), stride=1, padding=0)
-        self.conv3 = nn.Conv2d(300, 128, kernel_size= (3, 300), stride=1, padding=0)
-        self.drop_embs = nn.Dropout(p=0.2)  # 0.2 dropout
-        self.drop_hidden = nn.Dropout(p=0.5)  # 0.5 dropout
-        self.label = nn.Linear(3 * 128, num_outputs)
+        # Convolutional Filters
+        self.conv1d_list = nn.ModuleList([ nn.Conv1d(in_channels=self.embs_dim,
+                                                     out_channels=self.num_filters[i],
+                                                     kernel_size=self.filter_sizes[i])
+                                           for i in range(len(self.filter_sizes))
+                                         ])
+        # Fully-connected layer and Dropout
+        self.fc = nn.Linear(np.sum(self.num_filters), self.num_outputs)
+        self.drop = nn.Dropout(p=0.5)
+        self.drop_embs = nn.Dropout(p=0.2)
+
+
 
     def forward(self, x):
-        print(x.size())
-        # input layer
-        x = self.drop_embs(x)
-        print(x.size())
 
-        # convolutional layer
-        out1 = self.conv1(x)  # (batch_size, out_channels, dim, 1)
-        print(out1.size())
-        out1 = F.relu(out1.squeeze(3))  # activation.size() = (batch_size, out_channels, dim1)
-        print(out1.size())
-        out1 = F.max_pool1d(out1, out1.size()[2]).squeeze(2)  # maxpool_out.size() = (batch_size, out_channels)
-        print(out1.size())
+        # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
+        x_embed = self.drop_embs(x)
 
-        #out2 = self.conv2(x)  # (batch_size, out_channels, dim, 1)
-        #out2 = F.relu(out2.squeeze(3))  # activation.size() = (batch_size, out_channels, dim1)
-        #out2 = F.max_pool1d(out2, out2.size()[2]).squeeze(2)  # maxpool_out.size() = (batch_size, out_channels)
+        # Permute `x_embed` to match input shape requirement of `nn.Conv1d`.
+        # Output shape: (b, embed_dim, max_len)
+        x_reshaped = x_embed.permute(0, 2, 1)
+
+        # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
+        x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
+
+        # Max pooling. Output shape: (b, num_filters[i], 1)
+        x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
+                       for x_conv in x_conv_list]
+
+        # Concatenate x_pool_list to feed the fully connected layer.
+        # Output shape: (b, sum(num_filters))
+        x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
+
+        # Output shape: (b, n_classes)
+        out = self.fc(self.drop(x_fc))
+
+        return out
 
 
-        #x = x.unsqueeze(1) # neu
-        #print(x.size())
-        #x = self.conv1(x)
-        #x = F.relu(x)
-        #x = self.max_pool(x)  # max pool
-        #x = self.drop_hidden(x)  # ist das richtig?
-
-        # dense layer
-        #x = x.reshape(-1, x.shape[1] * x.shape[2])  # flatten, but batch_size (= x.shape[0]) should stay; stimmt das so?
-        #x = self.fc1(x)
-        #x = F.relu(x)
-        #x = self.drop_hidden(x)
-
-        # output layer
-        #x = self.fc2(x)
-
-        #return x

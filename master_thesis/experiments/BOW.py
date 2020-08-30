@@ -119,19 +119,8 @@ def train_BOW_model(df,
     pickle.dump(model, open(target_path, 'wb'))
 
 
-
-# get raw data
-df = pd.read_csv(utils.DATA / 'combined.tsv', sep = '\t')
-df = df.fillna('') # replacing Nan with emtpy string
-print("Shape of raw df:", df.shape)
-
-# just take articles with ...
-df = df.loc[(df['pageviews'] >= 20) &
-            (df['nr_tokens'] >= 10) & # to delete articles without text or false text
-            (df['avgTimeOnPagePerNr_tokens'] <= 4) &
-            (df['avgTimeOnPagePerNr_tokens'] >= 0.01)
-            ]
-print("Remaining df after conditioning:", df.shape)
+# get data (already conditionend on min_pageviews etc)
+df = utils.get_conditioned_df()
 
 # preprocessor
 preprocessor = utils.Preprocessor(delete_stopwords=True, lemmatize=True, delete_punctuation=True)
