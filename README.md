@@ -2,12 +2,19 @@
 
 Masterarbeit in Zusammenarbeit mit INWT Statistics
 
+
+
 ### Überblick über den Inhalt des Repository
 
-To Do...
+* experiments: Ausführbare Skripte für das Training der unterschiedlichen Modelle.
 
+* src: Die Modell-Architekturen (models), allgemein wichtige Helferfunktionen (utils) und solche zu Dataset/Dataloafer etc. (data).
 
+* notebooks: (teilweise veraltete) Jupyter Notebook mit ersten Versuchen, Visualisierung, Zusammenführen der Datensätze
 
+* outputs: (wird nicht von git getrackt) Gespeicherte trainierte Modelle, gespeicherte Features, ...
+
+* deprecated: Veraltetes, das aber vielleicht noch interessant sein könnte
 
 
 
