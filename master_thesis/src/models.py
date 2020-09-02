@@ -83,8 +83,12 @@ class CNN(nn.Module):
         # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
 
-        # Max pooling. Output shape: (b, num_filters[i], 1)
-        x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
+        ## Max pooling. Output shape: (b, num_filters[i], 1)
+        #x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
+        #               for x_conv in x_conv_list]
+
+        # Average pooling. Output shape: (b, num_filters[i], 1)
+        x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
                        for x_conv in x_conv_list]
 
         # Concatenate x_pool_list to feed the fully connected layer.

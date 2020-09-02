@@ -5,51 +5,54 @@ from torch import optim, nn
 import pandas as pd
 import numpy as np
 import scipy.stats as st
+from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
 
-assert torch.cuda.is_available()
-device = torch.device('cuda:0')
-print("Device is: ", device)
+import logging
+logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
+#TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
 
 # get pretrained model and tokenizer from huggingface's transformer library
 model, tokenizer = models.get_model_and_tokenizer()
 model.to(device)
 
-# try out tokenizer
-#sample_text = "Das hier ist ein deutscher Beispieltext. Und einen zweiten müssen wir auch noch haben."
-#tokens = tokenizer.tokenize(sample_text) # just tokenizes
-#token_ids = tokenizer.convert_tokens_to_ids(tokens)
-#ids = tokenizer.encode(sample_text) # already adds special tokens
-#encoded_plus = tokenizer.encode_plus(sample_text,
-#                                     max_length = 10,
-#                                     return_token_type_ids=False,
-#                                     pad_to_max_length=True,
-#                                     truncation=True,
-#                                     return_attention_mask=True,)
-
-#print(tokens)
-#print(token_ids)
-#print(ids)
-#print("Testing the tokenizer:" , encoded_plus)
-
-#tokenizer.get_vocab() # shows tokenizer vocab (subwords!)
-#tokenizer.sep_token, tokenizer.sep_token_id, tokenizer.cls_token, tokenizer.cls_token_id, tokenizer.pad_token, tokenizer.pad_token_id
-
-
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
+df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
+
+# HYPERPARAMETERS
+EPOCHS = 10
+BATCH_SIZE = 8
+FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
+MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
+START = None # random, if MAX_LEN is specified you probably want to start at 0
+LR = 1e-6 # before it was 1e-5
+
+# building identifier from hyperparameters (for Tensorboard and saving model)
+identifier = f"BERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+
+# setting up Tensorboard
+tensorboard_path = f'runs/{identifier}'
+writer = SummaryWriter(tensorboard_path)
+print(f"logging with Tensorboard to path {tensorboard_path}")
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-BATCH_SIZE = 6
-MAX_LEN = 512
-dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df = df,
-                                                         target = 'avgTimeOnPagePerNr_tokens',  # 'avgTimeOnPagePerNr_tokens',
-                                                         text_base = 'text_preprocessed',  # 'text_preprocessed', # 'titelH1',
+window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
+collater = data.Collater_BERT()
+
+dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
+                                                         target = 'avgTimeOnPagePerNr_tokens',
+                                                         text_base = 'text_preprocessed',
                                                          tokenizer = tokenizer,
-                                                         max_len = MAX_LEN,
-                                                         batch_size = BATCH_SIZE)
+                                                         train_batch_size = BATCH_SIZE,
+                                                         val_batch_size= BATCH_SIZE,
+                                                         transform = window,
+                                                         collater = collater)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
@@ -62,18 +65,12 @@ attention_mask = data['attention_mask']
 print(attention_mask.shape)
 print(data['target'].shape)
 
-# loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=1e-5)
 
-#LEARNING_RATE = 0.001 #0.001 # 0.00001
-#optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-#optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-#optimizer = optim.AdamW(model.parameters(), lr=1e-5)
+# loss and optimizer
+optimizer = optim.AdamW(model.parameters(), lr=LR)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
-
-EPOCHS = 5 #15
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -82,6 +79,7 @@ for epoch in range(EPOCHS):
     print("training")
     model = model.train()
     train_losses = []
+    running_loss = 0.0
 
     for nr, d in enumerate(dl_train):
         print("-Batch", nr, end='\r')
@@ -95,15 +93,23 @@ for epoch in range(EPOCHS):
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
+        running_loss += loss.item()
         loss.backward()
 
         # nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         optimizer.zero_grad()
 
-        if nr%50 == 0: # every 50 batches print
-            print(f"mean train loss at batch {nr}:", np.mean(train_losses))
+        if nr % 50 == 49:  # every 50 batches print
+            print(f"running train loss batch {nr + 1}:", running_loss / 50)
+            # log the running train loss to tensorboard
+            writer.add_scalar('train loss batch',
+                              running_loss / 50,
+                              epoch * len(dl_train) + nr)  # to get the overall batch nr
+
+            running_loss = 0.0
     print("Mean train loss epoch:", np.mean(train_losses))
+    writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
 
     ### EVALUATING on dev
     print("evaluating")
@@ -128,12 +134,22 @@ for epoch in range(EPOCHS):
             targets = targets.squeeze().cpu()
             pred.extend(outputs)
             true.extend(targets)
+
+        # log eval loss and pearson to tensorboard
         print("Mean eval loss:", np.mean(eval_losses))
         print("Pearson's r on dev set:", st.pearsonr(pred, true))
+        writer.add_scalar('eval loss epoch', np.mean(eval_losses), epoch)
+        writer.add_scalar('Pearson epoch', st.pearsonr(pred, true)[0], epoch)
 
-#print("saving model")
-model.save_pretrained(utils.OUTPUT / 'saved_models' / f'BERT_{str(MAX_LEN)}')
+model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
+print("saving model to", model_path)
+model.save_pretrained(model_path)
 
-print("BATCH_SIZE:", BATCH_SIZE)
-print("MAX_LEN: ", MAX_LEN)
+print("FIXED_LEN: ", FIXED_LEN)
+print("MIN_LEN: ", MIN_LEN)
+print("START: ", START)
+print("EPOCHS: ", EPOCHS)
+print("BATCH SIZE: ", BATCH_SIZE)
+print("LR: ", LR)
+
 print(df.shape)

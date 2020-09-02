@@ -5,59 +5,41 @@ from torch import optim, nn
 import pandas as pd
 import numpy as np
 import scipy.stats as st
-from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print('Using device:', device)
+assert torch.cuda.is_available()
+device = torch.device('cuda:0')
+print("Device is: ", device)
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
-
-# HYPERPARAMETERS
-EPOCHS = 10
-BATCH_SIZE = 8
-FIXED_LEN = None
-MIN_LEN = 500 # 400
-START = None
-LR = 1e-5 # before it was 1e-5
-
-# building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
-
-# setting up Tensorboard
-tensorboard_path = f'runs/{identifier}'
-writer = SummaryWriter(tensorboard_path)
-print(f"logging with Tensorboard to path {tensorboard_path}")
 
 embs = utils.load_fasttext_vectors(limit = None)
 EMBS_DIM = 300
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-window = data.RandomWindow_CNN(start = START, fixed_len = FIXED_LEN, min_len = MIN_LEN)
-collater = data.Collater_CNN()
-
+BATCH_SIZE = 12
+MAX_LEN = 500
 dl_train, dl_dev, dl_test = data.create_DataLoaders_CNN(df = df,
                                                         target = 'avgTimeOnPagePerNr_tokens',
                                                         text_base = 'text_preprocessed',
                                                         tokenizer = None, # uses default (spacy) tokenizer
-                                                        embs = embs,
-                                                        train_batch_size = BATCH_SIZE,
-                                                        val_batch_size= BATCH_SIZE,
-                                                        transform = window,
-                                                        collater = collater)
+                                                        max_len = MAX_LEN,
+                                                        batch_size = BATCH_SIZE,
+                                                        embs = embs)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
 print(data.keys())
 input_matrix = data['input_matrix']
 print(input_matrix.shape)
-#print(data['target'])
+print(data['target'])
 print(data['target'].shape)
 
+
+#model = models.CNN(num_outputs=1, embs_dim=EMBS_DIM)
 model = models.CNN(num_outputs = 1,
                    embs_dim = EMBS_DIM,
                    filter_sizes=[3, 4, 5],
@@ -66,11 +48,14 @@ model = models.CNN(num_outputs = 1,
 model.to(device)
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), LR) # vorher 1e-3 Adam? lr=1e-5?
+optimizer = optim.Adam(model.parameters(), lr=1e-3) # beim anderen lr=1e-5
                                                      # das Tutorial nutzt optim.Adadelta(cnn_model.parameters(), lr=0.001, rho=0.95)
+                                                     # vorher hatte ich AdamW
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
+
+EPOCHS = 2 #15
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -79,7 +64,6 @@ for epoch in range(EPOCHS):
     print("training")
     model = model.train()
     train_losses = []
-    running_loss = 0.0
 
     for nr, d in enumerate(dl_train):
         print("-Batch", nr, end='\r')
@@ -91,24 +75,16 @@ for epoch in range(EPOCHS):
         # print(outputs.shape)
 
         loss = loss_fn(outputs, targets)
-        train_losses.append(loss.item()) # for the whole epoch
-        running_loss += loss.item() # to get mean over batches
+        train_losses.append(loss.item())
         loss.backward()
 
         # nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         optimizer.zero_grad()
 
-        if nr%50 == 49: # every 50 batches print
-            print(f"running train loss batch {nr+1}:", running_loss/50)
-            # log the running train loss to tensorboard
-            writer.add_scalar('train loss batch',
-                              running_loss / 50,
-                              epoch * len(dl_train) + nr) # to get the overall batch nr
-            running_loss = 0.0
-
+        if nr%50 == 0: # every 50 batches print
+            print(f"mean train loss at batch {nr}:", np.mean(train_losses))
     print("Mean train loss epoch:", np.mean(train_losses))
-    writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
 
     ### EVALUATING on dev
     print("evaluating")
@@ -132,22 +108,18 @@ for epoch in range(EPOCHS):
             targets = targets.squeeze().cpu()
             pred.extend(outputs)
             true.extend(targets)
-
-        # log eval loss and pearson to tensorboard
         print("Mean eval loss:", np.mean(eval_losses))
         print("Pearson's r on dev set:", st.pearsonr(pred, true))
-        writer.add_scalar('eval loss epoch', np.mean(eval_losses), epoch)
-        writer.add_scalar('Pearson epoch', st.pearsonr(pred, true)[0], epoch)
 
-model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
-print("saving model to", model_path)
-torch.save(model.state_dict(), model_path)
+print("saving model")
+torch.save(model.state_dict(), utils.OUTPUT / 'saved_models' / f'CNN_{str(MAX_LEN)}.pt')
 
-print("FIXED_LEN: ", FIXED_LEN)
-print("MIN_LEN: ", MIN_LEN)
-print("START: ", START)
-print("EPOCHS: ", EPOCHS)
-print("BATCH SIZE: ", BATCH_SIZE)
-print("LR: ", LR)
+# to load model again:
+#model = models.CNN(num_outputs=1, embs_dim=EMBS_DIM)
+#model.load_state_dict(torch.load(utils.OUTPUT / 'saved_models' / f'CNN_{str(MAX_LEN)}.pt)
+#model.eval()
 
+
+print("BATCH_SIZE:", BATCH_SIZE)
+print("MAX_LEN: ", MAX_LEN)
 print(df.shape)
