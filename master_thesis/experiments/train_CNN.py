@@ -17,20 +17,23 @@ df = utils.get_conditioned_df()
 df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
 
 # HYPERPARAMETERS
-EPOCHS = 10
+EPOCHS = 4
 BATCH_SIZE = 8
 FIXED_LEN = None
 MIN_LEN = 500 # 400
 START = None
-LR = 1e-5 # before it was 1e-5
+LR = 1e-4
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_smaller"
 
 # setting up Tensorboard
 tensorboard_path = f'runs/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
+
+# for saving model after each epoch
+model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 embs = utils.load_fasttext_vectors(limit = None)
 EMBS_DIM = 300
@@ -58,16 +61,22 @@ print(input_matrix.shape)
 #print(data['target'])
 print(data['target'].shape)
 
-model = models.CNN(num_outputs = 1,
-                   embs_dim = EMBS_DIM,
-                   filter_sizes=[3, 4, 5],
-                   num_filters=[100,100,100]
-                   )
+#model = models.CNN(num_outputs = 1,
+#                   embs_dim = EMBS_DIM,
+#                   filter_sizes=[3, 4, 5],
+#                   num_filters=[100,100,100]
+#                   )
+
+model = models.CNN_small(num_outputs=1,
+                         embs_dim=EMBS_DIM,
+                         filter_sizes=[3, 4, 5],
+                         num_filters=[50,50,50]) # try a smaller model
+
 model.to(device)
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), LR) # vorher 1e-3 Adam? lr=1e-5?
-                                                     # das Tutorial nutzt optim.Adadelta(cnn_model.parameters(), lr=0.001, rho=0.95)
+optimizer = optim.AdamW(model.parameters(), lr=LR) # vorher 1e-3 Adam? (lr=1e-5 ist jedenfalls nicht gut!)
+#optimizer = optim.Adadelta(model.parameters(), lr=LR, rho=0.95) # den hier hier nutzt das Tutorial vom CNN, war aber bei mir schlecht
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -139,9 +148,8 @@ for epoch in range(EPOCHS):
         writer.add_scalar('eval loss epoch', np.mean(eval_losses), epoch)
         writer.add_scalar('Pearson epoch', st.pearsonr(pred, true)[0], epoch)
 
-model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
-print("saving model to", model_path)
-torch.save(model.state_dict(), model_path)
+    print("saving model to", model_path)
+    torch.save(model.state_dict(), model_path)
 
 print("FIXED_LEN: ", FIXED_LEN)
 print("MIN_LEN: ", MIN_LEN)

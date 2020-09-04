@@ -29,7 +29,8 @@ def train_BOW_model(df,
 
         # stopwords
         stopwords = nltk.corpus.stopwords.words('german')
-        if preprocessor:
+        if preprocessor: #TODO: Das ist dämlich! So wird die Stopwordliste gerade bei delete_stopwords == True eliminiert!
+                         # andererseits entfernt der preprocessor die stopwörter sowieso also ist es vielleicht auch egal
             stopwords = [ preprocessor(s) for s in stopwords ]
         print(stopwords[:10])
 
@@ -121,15 +122,16 @@ def train_BOW_model(df,
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
+df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
 
 # preprocessor
-preprocessor = utils.Preprocessor(delete_stopwords=True, lemmatize=True, delete_punctuation=True)
+preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=True)
 
 train_BOW_model(df = df,
-                preprocessor = preprocessor, ############### Achtung geändert (auch saving ausgestellt)
+                preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 11000, # 100000 is to big for memory)
+                max_features = 500, # 100000 is to big for memory)
                 text_base = 'text_preprocessed',
                 target = 'avgTimeOnPagePerNr_tokens')
 
@@ -140,4 +142,12 @@ train_BOW_model(df = df,
 
 # note: bei 1000 kam ca. Pearson = .46 raus, also ganz gut
 # note: bei 2000 ca. (0.3556820544408318, 1.4115783794433868e-129) also schlechter
-# not: bei 1100 und mit lemmatization, MAX_NGRAM=4: (0.45406266713934623, 9.582367468030329e-220)
+# note: bei 1100 und mit lemmatization, MAX_NGRAM=4: (0.45406266713934623, 9.582367468030329e-220)
+# bei 10000 mit rel (0.3650459438793716, 1.9179660256674083e-41) (egal ob mit oder ohne stopwörtern
+# bei 20000 mit rel und ohne lemmatize: (0.35747630479995424, 1.0697484492400376e-39)
+# bei 1000 rel delete nothing, no lemmatize (0.3821504439702175, 1.4454720934392103e-45)
+# bei 1000 abs delete_punct, no lemmatize (0.5839275078158184, 2.545271174941579e-117)
+# bei 2000 und sonst wie drüber: (0.5626587042320443, 2.871133357531568e-107)
+# bei 500 und sonst wie drüber: (0.5920846256028592, 2.236844477508473e-121)
+# bei 200 und sonst wie drüber: (0.586679425138092, 1.1226280086194277e-118)
+# bei 500 mit lemmatize: (0.5874837330825343, 4.483338884523782e-119)

@@ -57,7 +57,7 @@ def train_Embs_model(df,
 
 embs = utils.load_fasttext_vectors(limit = None)
 
-preprocessor = utils.Preprocessor(lemmatize=True,
+preprocessor = utils.Preprocessor(lemmatize=False,
                                   delete_stopwords=True,
                                   delete_punctuation=True)
 
@@ -68,6 +68,7 @@ preprocessor = utils.Preprocessor(lemmatize=True,
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
+df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
 
 train_Embs_model(df = df,
                  preprocessor = preprocessor,
@@ -75,4 +76,7 @@ train_Embs_model(df = df,
                  text_base = 'text_preprocessed',
                  target = 'avgTimeOnPagePerNr_tokens')
 
-# note: hier kam raus: Pearson: (0.3800609554415717, 3.8111553582181078e-149) # ohne Lemmatisierung, mit Stopwortentfernung und mit Puncutation-Entfernung
+# (0.3800609554415717, 3.8111553582181078e-149) # ohne Lemmatisierung, mit Stopwortentfernung und mit Puncutation-Entfernung
+# (0.3424489259604992, 2.283629138045251e-36) lemmatize=False, delete_s = True, delete p = True
+# (0.373576696062199, 1.8096552504547748e-43) alles = False
+# (0.3424489259604992, 2.283629138045251e-36) bei lemma = False, delete_s = True, delete_p = True

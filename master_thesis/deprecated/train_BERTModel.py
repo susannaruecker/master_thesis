@@ -1,8 +1,14 @@
 #!/usr/bin/env python
 
+### Als Gedanken-Stütze
+### Der Unterschied zu train_BERT ist: Hier verwende ich das originale Bert (siehe models)
+### mit eigenem Dropout und zwei linearen Layern
+### statt dem vorgefertigten BertForSequenceClassification
+### Grund: ich habe das Gefühl, dass das andere vielleicht zu sehr überfittet
+
 import torch
 from torch import optim, nn
-from transformers import BertTokenizer, DistilBertTokenizer
+from transformers import BertTokenizer
 import numpy as np
 import scipy.stats as st
 from torch.utils.tensorboard import SummaryWriter
@@ -18,21 +24,8 @@ print('Using device:', device)
 
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
-
-MODEL = 'BERTModel' # 'BERTModel'
-
-if MODEL == 'BERT':
-    model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-if MODEL == 'BERTModel':
-    model = models.Bert_regression(n_outputs=1)     # this is customized (dropout!) BertModel
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-if MODEL == 'DistilBERT':
-    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
-    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-german-cased')
-
-
-
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+model = models.Bert_regression(n_outputs = 1)
 model.to(device)
 
 # get data (already conditionend on min_pageviews etc)
@@ -45,10 +38,10 @@ BATCH_SIZE = 8
 FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
 MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
 START = None # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-5 # before it was 1e-5
+LR = 1e-4 # before it was 1e-5
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"BERTModel_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs/{identifier}'
@@ -68,7 +61,7 @@ dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
                                                          text_base = 'text_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,
-                                                         val_batch_size= BATCH_SIZE,
+                                                         val_batch_size = BATCH_SIZE,
                                                          transform = window,
                                                          collater = collater)
 
@@ -104,10 +97,10 @@ for epoch in range(EPOCHS):
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         targets = d["target"].to(device)
-        # print(targets.shape)
+        #print("Target shape", targets.shape)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
         #print(outputs[:10])
-        # print(outputs.shape)
+        #print("Output shape:", outputs.shape)
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
@@ -143,8 +136,10 @@ for epoch in range(EPOCHS):
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
             targets = d["target"].to(device)
+            #print("Eval target shape", targets.shape)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             #print(outputs[:10])
+            #print("Eval outputs shape", outputs.shape)
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
 
@@ -162,7 +157,6 @@ for epoch in range(EPOCHS):
     print("saving model to", model_path)
     #model.save_pretrained(model_path)
     torch.save(model.state_dict(), model_path)
-
 
 print("FIXED_LEN: ", FIXED_LEN)
 print("MIN_LEN: ", MIN_LEN)
