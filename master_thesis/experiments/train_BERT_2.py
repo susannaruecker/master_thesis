@@ -19,7 +19,7 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERTAvg' #'BERTModel'
+MODEL = 'BERTAvg' #'BERTAvg' #'BERTModel'
 
 if MODEL == 'BERT':
     model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
@@ -29,7 +29,7 @@ elif MODEL == 'BERTModel':
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
     model = models.Bert_averaging(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained((PRE_TRAINED_MODEL_NAME))
+    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 #if MODEL == 'DistilBERT':
 #    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
@@ -42,18 +42,18 @@ df = utils.get_conditioned_df()
 df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
 
 # HYPERPARAMETERS
-EPOCHS = 5
+EPOCHS = 4
 BATCH_SIZE = 8
 FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
 MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
 START = None # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-5 # before it was 1e-5
+LR = 1e-6 # before it was 1e-5
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc"
 
 # setting up Tensorboard
-tensorboard_path = f'runs/{identifier}'
+tensorboard_path = f'runs2/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
@@ -92,6 +92,38 @@ loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
 
+### helper function for EVALUATING on dev whenever we want
+def evaluate_model(model):
+    print("evaluating")
+    model = model.eval()
+    eval_losses = []
+
+    pred = []  # for calculating Pearson's r on dev
+    true = []
+
+    with torch.no_grad():
+        for nr, d in enumerate(dl_dev):
+            print("-Batch", nr, end='\r')
+            input_ids = d["input_ids"].to(device)
+            attention_mask = d["attention_mask"].to(device)
+            targets = d["target"].to(device)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            # print(outputs[:10])
+            loss = loss_fn(outputs, targets)
+            eval_losses.append(loss.item())
+
+            outputs = outputs.squeeze().cpu()
+            targets = targets.squeeze().cpu()
+            pred.extend(outputs)
+            true.extend(targets)
+
+    return {'Pearson': st.pearsonr(pred, true)[0],
+            'eval_loss': np.mean(eval_losses)}
+
+
+batch_count = 0
+running_loss = []
+
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
 
@@ -99,10 +131,11 @@ for epoch in range(EPOCHS):
     print("training")
     model = model.train()
     train_losses = []
-    running_loss = 0.0
 
     for nr, d in enumerate(dl_train):
         print("-Batch", nr, end='\r')
+        batch_count += 1
+
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         targets = d["target"].to(device)
@@ -113,53 +146,31 @@ for epoch in range(EPOCHS):
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
-        running_loss += loss.item()
+        running_loss.append(loss.item())
         loss.backward()
 
-        # nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
-        optimizer.zero_grad()
+        if batch_count % 5 == 0: # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
+            optimizer.step()
+            optimizer.zero_grad()
 
-        if nr % 50 == 49:  # every 50 batches print
-            print(f"running train loss batch {nr + 1}:", running_loss / 50)
+        if batch_count % 100 == 0: # every 100 batches: write to tensorboard
+            print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
             # log the running train loss to tensorboard
-            writer.add_scalar('train loss batch',
-                              running_loss / 50,
-                              epoch * len(dl_train) + nr)  # to get the overall batch nr
+            writer.add_scalar('train loss', np.mean(running_loss), batch_count)
+            running_loss = []
 
-            running_loss = 0.0
+        if batch_count % 300 == 0: # every 300 batches: evaluate
+            # EVALUATE
+            eval_rt = evaluate_model(model = model)
+            # log eval loss and pearson to tensorboard
+            print("Mean eval loss:", eval_rt['eval_loss'])
+            print("Pearson's r on dev set:", eval_rt['Pearson'])
+            writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
+            writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
+            model = model.train() # make sure it is back to train mode
+
     print("Mean train loss epoch:", np.mean(train_losses))
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
-
-    ### EVALUATING on dev
-    print("evaluating")
-    model = model.eval()
-    eval_losses = []
-
-    pred = []  # for calculating Pearson's r on dev in evaluation per epoch
-    true = []
-
-    with torch.no_grad():
-        for nr, d in enumerate(dl_dev):
-            print("-Batch", nr, end='\r')
-            input_ids = d["input_ids"].to(device)
-            attention_mask = d["attention_mask"].to(device)
-            targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            #print(outputs[:10])
-            loss = loss_fn(outputs, targets)
-            eval_losses.append(loss.item())
-
-            outputs = outputs.squeeze().cpu()
-            targets = targets.squeeze().cpu()
-            pred.extend(outputs)
-            true.extend(targets)
-
-        # log eval loss and pearson to tensorboard
-        print("Mean eval loss:", np.mean(eval_losses))
-        print("Pearson's r on dev set:", st.pearsonr(pred, true))
-        writer.add_scalar('eval loss epoch', np.mean(eval_losses), epoch)
-        writer.add_scalar('Pearson epoch', st.pearsonr(pred, true)[0], epoch)
 
     print("saving model to", model_path)
     torch.save(model.state_dict(), model_path)

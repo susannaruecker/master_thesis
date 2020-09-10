@@ -150,38 +150,49 @@ if __name__ == "__main__":
 
 ### BERT Evaluation
 ###
-# bei max_len 100 (0.46954919345639684, 7.58807236498442e-71) also ähnlich wie BOW
-# bei max_len 200 (0.5467132606724006, 3.380111928800224e-100) also ziemlich eindeutig besser
-# bei max_len 300 (0.5927131137308533, 1.0772004471333138e-121)
-# bei max_len 512 (0.629376173357152, 1.727308917370859e-141)
-# bei FIXED_LEN: None, MIN_LEN: 400, START: None (0.6714032213951131, 9.993981267919477e-168)
-# bei FIXED_LEN None, MIN_LEN 500 BATCH_SIZE 6, START None, lr 1e-5: (0.6670378344980564, 8.423550985343239e-165)
-# BERT_FIXLENNone_MINLEN500_STARTNone_EP5_BS6_LR1e-06     (0.6675789223620894, 3.6775100957520147e-165)
-# BERT_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR1e-06    (0.6558214988109624, 1.6574095862811104e-157)
+# bei max_len 100 (0.469) also ähnlich wie BOW
+# bei max_len 200 (0.547) also ziemlich eindeutig besser
+# bei max_len 300 (0.593)
+# bei max_len 512 (0.629)
+# bei FIXED_LEN: None, MIN_LEN: 400, START: None (0.671)
+# bei FIXED_LEN None, MIN_LEN 500 BATCH_SIZE 6, START None, lr 1e-5: (0.667)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP5_BS6_LR1e-06     (0.668)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR1e-06    (0.656)
     # das ist nach 6 Epochenstark wieder gesunken, siehe Tensorboard
-# BERT_FIXLENNone_MINLEN500_STARTNone_EP7_BS8_LR1e-05     (0.6133248448262111, 1.6775001410337765e-132)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP7_BS8_LR1e-05     (0.613)
     # das war am Anfang seeeehr gut (0.67), ist dann aber massiv gesunken --> Tensorboard
     # Idee: unbedingt mal Dropout erhöhen
-# BERT_FIXLENNone_MINLEN500_STARTNone_EP2_BS8_LR1e-06    (0.6521738683946509, 3.3466333898391485e-155) (das war nur zum Testen nach Code-Umbau)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP2_BS8_LR1e-06    (0.652) (das war nur zum Testen nach Code-Umbau)
 
 ### BERTModel (also nicht BertForSequenceClassification sondern eigene Architektur) mit mehr Dropout
-# BERTModel_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR1e-05 (scheint vielversprechend ca 0.68
+# BERTModel_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR1e-05 (0.627) # erste sehr gut (0.68), dann abgefallen
+# BERTModel_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR1e-06 (0.673)
+    # das war ohne das zusätzliche Linear Layer
 # noch laufen lassen? BERTModel_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR0.0001
 
+### BERTAvg (also gemittelte last hdden states statt CLS-Token, eigenes Dropout)
+# BERTAvg_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR1e-05 (0.634)
+    # das war ganz am Anfang sehr gut, ist dann aber sofort abgefallen
 
-
+### mit gradient accumulation (nur jede 5. batch optimizer)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR1e-05_gradient_acc (0.659) # war vorher etwas besser, dann wieder gesunken
+# BERTModel_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR1e-05_gradient_acc (0.673) # leicht wieder gefallen
+# BERTAvg_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR1e-05_gradient_acc (0.6702) # leicht wieder gefallen
+# BERTModel_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR1e-06_gradient_acc (0.656)
+# BERT_FIXLENNone_MINLEN500_STARTNone_EP3_BS8_LR0.0001_gradient_acc (0.651)
+# BERTAvg_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR1e-06_gradient_acc (0.663)
 
 
 ### CNN Evaluation
 ###
-# bei max_len = 200: (0.5574401705693174, 6.52347471105848e-105) (EPOCHS = 3)
-# bei max_len = 400: (0.6242538472164617, 1.4538840723780503e-138) (EPOCHS = 2)
-# bei max_len = 300 und neu average statt max_pooling: (0.6630899615610468, 3.3797950507796264e-162)
-# bei max_len = 500 und neu average statt max_pooling (0.6666460255912416, 1.533416216477133e-164) # war hier lr=0.001?
-# bei FIXED_LEN: None, MIN_LEN: 400, START: None (0.6287055687453889, 4.201947567836372e-141)
-# bei FIXED_LEN None, MIN_LEN 500, START None, Epochs 8, LR 1e-4 (0.6308993289053406, 2.2746886605639486e-142)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR0.001 (0.6318412771324291, 6.456028747687485e-143)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR0.0001 (0.6340488149280079, 3.3164085635354044e-144)
+# bei max_len = 200: (0.557) (EPOCHS = 3)
+# bei max_len = 400: (0.624) (EPOCHS = 2)
+# bei max_len = 300 und neu average statt max_pooling: (0.663)
+# bei max_len = 500 und neu average statt max_pooling (0.667) # war hier lr=0.001?
+# bei FIXED_LEN: None, MIN_LEN: 400, START: None (0.629)
+# bei FIXED_LEN None, MIN_LEN 500, START None, Epochs 8, LR 1e-4 (0.631)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR0.001 (0.632)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP10_BS8_LR0.0001 (0.634)
 
 
 # Adadelta ist schlecht, lr = 1e-5 auch
@@ -189,13 +200,21 @@ if __name__ == "__main__":
 
 
 ### CNN_smaller (30,30,30)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP3_BS8_LR0.0001_smaller (0.6350182300070232, 8.936369159493989e-145)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP3_BS8_LR0.0001_smaller (0.635)
 
 ### CNN_smaller (50,50,50), und mit weniger Dropout (0.3)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller XXXXXXXXXXX
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller (0.63)
 
 # even smaller:
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR0.0001_smaller (0.6348136040166809, 1.1790809328857918e-144)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller_newFilter (0.6293321175422854, 1.8313146744704968e-141)
-# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller_newFilter (0.6318168330754762, 6.670881577603354e-143) # Dropout kleiner (0.3)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP5_BS8_LR0.0001_smaller (0.635)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller_newFilter (0.629)
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP4_BS8_LR0.0001_smaller_newFilter (0.632) # Dropout kleiner (0.3)
+
+### (60,60,60), 0.4 Dropout
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP6_BS8_LR0.0001_smaller (0.633)
+
+### (10,10,10), 0.4 Dropout
+# CNN_FIXLENNone_MINLEN500_STARTNone_EP3_BS8_LR0.0001_very_small (0.628)
+
+
 

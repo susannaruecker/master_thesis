@@ -68,28 +68,51 @@ class Bert_regression(nn.Module):
         super(Bert_regression, self).__init__()
         self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME)
         self.drop = nn.Dropout(p=0.3) # ich glaube, bei BertForSequenceClassification ist das 0.1
-        self.fc = nn.Linear(self.bert.config.hidden_size, 128) # (hidden_size = 768) # das hat BertForSequenceClassification nicht
-        self.out = nn.Linear(128, n_outputs)
+        #self.fc = nn.Linear(self.bert.config.hidden_size, 128) # (hidden_size = 768) # das hat BertForSequenceClassification nicht
+        self.out = nn.Linear(self.bert.config.hidden_size, n_outputs) # 128
 
     def forward(self, input_ids, attention_mask):
-        last_hidden = self.bert(input_ids=input_ids, attention_mask=attention_mask) [1] # stimmt das?
+        last_hidden = self.bert(input_ids=input_ids, attention_mask=attention_mask) [1] # stimmt das? ist trotzdem nur das vom CLS, oder?
         last_hidden = self.drop(last_hidden) # Dropout
-        inter = self.fc(last_hidden)
-        out = self.out(inter)
-
+        #inter = self.fc(last_hidden)
+        #out = self.out(inter)
+        out = self.out(last_hidden)
         return out
 
 
-class DistilBert_sequence(Bert_sequence):
-    """ uses everything from Bert_sequence, but uses DistilBert instead of Bert
-    ACHTUNG: Der Tokenizer verwendet andere special tokens, aber das Dataset sollte das richtig machen...
-    """
+# Das hier nimmt nicht den last hidden state des CLS-Tokens als Sequence-Repräsentation, sondern mittelt über alle
+class Bert_averaging(nn.Module):
     def __init__(self, n_outputs):
-        super(Bert_sequence, self).__init__()
-        self.bert = DistilBertForSequenceClassification.from_pretrained('distilbert-base-german-cased',
-                                                                        num_labels=n_outputs,
-                                                                        output_attentions=False,
-                                                                        output_hidden_states=False)
+        super(Bert_averaging, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_hidden_states=True) # important!
+
+        self.drop = nn.Dropout(p=0.3) # ich glaube, bei BertForSequenceClassification ist das 0.1
+        self.out = nn.Linear(self.bert.config.hidden_size, n_outputs) # 128
+
+    def forward(self, input_ids, attention_mask):
+        hidden_states = self.bert(input_ids=input_ids, attention_mask=attention_mask) [0] # stimmt das?
+        #print(hidden_states.size())
+        avg_hidden = torch.mean(hidden_states, dim=1) # averaging the last hidden states of ALL tokens in sequence
+                                                       # instead of taking just the one of CLS-token
+        #print(avg_hidden.size())
+        avg_hidden = self.drop(avg_hidden) # Dropout
+        out = self.out(avg_hidden)
+        #print(out.size())
+        return out
+
+
+# not yet used, maybe something to try?
+#class DistilBert_sequence(Bert_sequence):
+#    """ uses everything from Bert_sequence, but uses DistilBert instead of Bert
+#    ACHTUNG: Der Tokenizer verwendet andere special tokens, aber das Dataset sollte das richtig machen...
+#    """
+#    def __init__(self, n_outputs):
+#        super(Bert_sequence, self).__init__()
+#        self.bert = DistilBertForSequenceClassification.from_pretrained('distilbert-base-german-cased',
+#                                                                        num_labels=n_outputs,
+#                                                                        output_attentions=False,
+#                                                                        output_hidden_states=False)
 
 
 # (fast) identisch nachgebaut wie hier https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
@@ -167,7 +190,7 @@ class CNN_small(nn.Module):
 
         self.fc = nn.Linear(np.sum(self.num_filters), 32)
         self.out = nn.Linear(32, self.num_outputs)
-        self.drop = nn.Dropout(p=0.3) # hier war sonst IMMER 0.5, mal kleiner ausprobiert
+        self.drop = nn.Dropout(p=0.4) # hier war sonst IMMER 0.5, mal kleiner ausprobiert
         self.drop_embs = nn.Dropout(p=0.2)
 
     def forward(self, x):

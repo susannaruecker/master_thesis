@@ -17,7 +17,7 @@ df = utils.get_conditioned_df()
 df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
 
 # HYPERPARAMETERS
-EPOCHS = 4
+EPOCHS = 3
 BATCH_SIZE = 8
 FIXED_LEN = None
 MIN_LEN = 500 # 400
@@ -70,7 +70,7 @@ print(data['target'].shape)
 model = models.CNN_small(num_outputs=1,
                          embs_dim=EMBS_DIM,
                          filter_sizes=[3, 4, 5],
-                         num_filters=[50,50,50]) # try a smaller model
+                         num_filters=[10,10,10]) # try a smaller model
 
 model.to(device)
 
