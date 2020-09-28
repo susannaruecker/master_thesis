@@ -19,7 +19,7 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERTAvg' #'BERTAvg' #'BERTModel'
+MODEL = 'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
 
 if MODEL == 'BERT':
     model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
@@ -39,7 +39,7 @@ model.to(device)
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
+df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
 
 # HYPERPARAMETERS
 EPOCHS = 4
@@ -50,7 +50,7 @@ START = None # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-6 # before it was 1e-5
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc_new"
 
 # setting up Tensorboard
 tensorboard_path = f'runs2/{identifier}'
@@ -66,7 +66,7 @@ window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= M
 collater = data.Collater_BERT()
 
 dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
-                                                         target = 'avgTimeOnPagePerNr_tokens',
+                                                         target = 'avgTimeOnPagePerWordcount',
                                                          text_base = 'text_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,

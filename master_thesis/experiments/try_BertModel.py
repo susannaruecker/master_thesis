@@ -40,6 +40,7 @@ print(output3)
 
 """
 
+"""
 model = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
                                   output_hidden_states=True)
 
@@ -75,3 +76,10 @@ print(outputs[2][1][:,0,:])
 #print(out)
 
 #TODO: this seems to be working! now try it out! :D
+
+"""
+
+model = models.Bert_sequence(n_outputs=2)
+encoded = tokenizer(text, padding=True, return_tensors="pt", return_token_type_ids=False)
+out = model(**encoded)
+print(out)

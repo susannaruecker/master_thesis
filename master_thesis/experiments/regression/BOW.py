@@ -8,6 +8,7 @@ import nltk
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import Ridge
 import scipy.stats as st
+from sklearn.metrics import mean_squared_error
 import pickle
 
 
@@ -17,7 +18,7 @@ def train_BOW_model(df,
                     create_or_load = 'create',
                     max_features = 10000,
                     text_base = 'text_preprocessed',
-                    target = 'avgTimeOnPagePerNr_tokens'
+                    target = 'avgTimeOnPagePerWordcount'
                     ):
 
     # create splits
@@ -112,8 +113,9 @@ def train_BOW_model(df,
     # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
     pred_dev[pred_dev < 0] = 0
 
-    # Pearson's r as evaluation metric
+    # Pearson's r and MSE as evaluation metric
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
+    print("MSE: ", mean_squared_error(pred_dev, y_dev))
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / f'BOW_{feature_type}_{str(max_features)}.pkl'
@@ -122,7 +124,7 @@ def train_BOW_model(df,
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
+#df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
 
 # preprocessor
 preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=True)
@@ -131,10 +133,12 @@ train_BOW_model(df = df,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 500, # 100000 is to big for memory)
+                max_features = 10000, # 100000 is to big for memory)
                 text_base = 'text_preprocessed',
-                target = 'avgTimeOnPagePerNr_tokens')
+                target = 'tokensPerMinute'#'avgTimeOnPagePerWordcount'
+                )
 
+# to load the model
 # to load the model
 # model = pickle.load(open(target_path, 'rb'))
 
@@ -151,3 +155,24 @@ train_BOW_model(df = df,
 # bei 500 und sonst wie drüber: (0.5920846256028592, 2.236844477508473e-121)
 # bei 200 und sonst wie drüber: (0.586679425138092, 1.1226280086194277e-118)
 # bei 500 mit lemmatize: (0.5874837330825343, 4.483338884523782e-119)
+
+### neuer Datensatz, neues conditioning
+# 500: Pearson 0.54  MSE 0.101
+# 1000: Pearson 0.54 MSE:  0.101
+# bei 10000: Pearson 0.32 MSE: 0.224
+
+### target = 'avgTimeOnPage'
+# bei 500: Pearson 0.29
+
+### target = 'stickiness'
+# bei 500: Pearson 0.17
+
+### target = 'bounceRate'
+# bei 500: Pearson 0.12
+
+### target= 'pageviews'
+# bei 500: Pearson 0.09
+
+### target = 'tokensPerMinute'
+# bei 1000: 0.56
+# bei 10000: 0.36
