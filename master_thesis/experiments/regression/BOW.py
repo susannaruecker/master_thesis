@@ -8,7 +8,7 @@ import nltk
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import Ridge
 import scipy.stats as st
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 import pickle
 
 
@@ -114,8 +114,12 @@ def train_BOW_model(df,
     pred_dev[pred_dev < 0] = 0
 
     # Pearson's r and MSE as evaluation metric
+    print("text_base:", text_base)
+    print("target:", target)
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
     print("MSE: ", mean_squared_error(pred_dev, y_dev))
+    print("MAE: ", mean_absolute_error(pred_dev, y_dev))
+
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / f'BOW_{feature_type}_{str(max_features)}.pkl'
@@ -124,21 +128,29 @@ def train_BOW_model(df,
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_conditioned_df()
+
+#df = utils.get_raw_df()
+#df = df[df["pageviews-exits"] >= 50] # TODO: change!
+#df = df[df.wordcount > 0]
+#df = df[df.avgTimeOnPage > 0]
+
+#df = df[df.zeilen > 0]
+#df = df[df.prozentVerlag >= 80] # das macht es bei avgTimeOnPage nicht besser, bei avgTimeOnPagePer... bei MAE schon, bei Pearson nicht ???
+#df = df[df.publisher == 'aachener']
 #df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
 
 # preprocessor
-preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=True)
+preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=False)
 
 train_BOW_model(df = df,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 10000, # 100000 is to big for memory)
-                text_base = 'text_preprocessed',
-                target = 'tokensPerMinute'#'avgTimeOnPagePerWordcount'
+                max_features = 500, # 100000 is to big for memory)
+                text_base = 'text_preprocessed', #'teaser', #'text_preprocessed',
+                target = 'avgTimeOnPagePerWordcount' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
                 )
 
-# to load the model
 # to load the model
 # model = pickle.load(open(target_path, 'rb'))
 
@@ -161,18 +173,18 @@ train_BOW_model(df = df,
 # 1000: Pearson 0.54 MSE:  0.101
 # bei 10000: Pearson 0.32 MSE: 0.224
 
-### target = 'avgTimeOnPage'
-# bei 500: Pearson 0.29
+### noch neueres conditioning: pageviews-exits >= 50, min_prozentVerlag = 50, min_prozentDpa = 50
+# bei 500: Pearson 0.59, MSE 0.07
+# bei 1000: 0.58, MSE  0.073
 
-### target = 'stickiness'
-# bei 500: Pearson 0.17
+# min_prozentVerlag >= 70
+# Pearson 0.39, MSE 0.056
 
-### target = 'bounceRate'
-# bei 500: Pearson 0.12
+# avgTimeOnPagePerRow ist ziemlich ähnlich wie avgTimeOnPagePerWordcount --> schade, ich hatte gehofft, es ist besser
 
-### target= 'pageviews'
-# bei 500: Pearson 0.09
+# avgTimeOnPage modellieren
+# Pearson nur 0.17 MAE 52,1 Sekunden --> ist das gut oder schlecht?
+# bei ganzem Datensatz (pageviews-exits >= 50) Pearson 0.209, MAE 52,8 also gleichgut/besser ???
 
-### target = 'tokensPerMinute'
-# bei 1000: 0.56
-# bei 10000: 0.36
+# tokensPerMinute
+# Pearson 0.47, MAE 92.3 (warum ist Pearson hier so viel schlechter, das ist doch eigentlich genau gleich wie avgTimeOnPagePerWordcount)

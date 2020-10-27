@@ -19,13 +19,13 @@ df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
 # HYPERPARAMETERS
 EPOCHS = 5
 BATCH_SIZE = 8
-FIXED_LEN = 500 # None
-MIN_LEN = 500#500 # 400
-START = 0 #None
+FIXED_LEN = None
+MIN_LEN = 500
+START = None
 LR = 1e-4
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc_smaller_new"
+identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc_smaller_newer"
 
 # setting up Tensorboard
 tensorboard_path = f'runs2/{identifier}'
@@ -135,7 +135,7 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 2 == 0: # vorher % 5 # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
+        if batch_count % 5 == 0: # vorher % 5 # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
             optimizer.step()
             optimizer.zero_grad()
 

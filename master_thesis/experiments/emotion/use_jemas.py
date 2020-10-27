@@ -24,7 +24,7 @@ print(text)
 #neutral = np.array([0.,5.,5.])
 
 # MEmoLon
-lex = utils.get_MEmoLon(max_length = 10000)
+lex = utils.get_MEmoLon(max_length = 5000)
 lex = lex.reset_index().dropna().set_index('word') # to delete nan in index...
 neutral = np.array([5.,5.,5.])
 
@@ -98,4 +98,6 @@ for i, ID in enumerate(IDs):
 
 print(df.head())
 
-df.to_csv('jemas_MEmoLon_maxlen10000.tsv', sep='\t')
+df.to_csv('jemas_MEmoLon_maxlen5000.tsv', sep='\t')
+#df.to_csv('jemas_vo.tsv', sep='\t')
+#df.to_csv('jemas_MEmoLon.tsv', sep='\t')

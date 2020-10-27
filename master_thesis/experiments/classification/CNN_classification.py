@@ -20,9 +20,9 @@ print(df.head())
 # HYPERPARAMETERS
 EPOCHS = 4
 BATCH_SIZE = 8
-FIXED_LEN = 500 #None
-MIN_LEN = 500 # 400
-START = 0 #None
+FIXED_LEN = None
+MIN_LEN = 500
+START = None
 LR = 1e-4
 
 # building identifier from hyperparameters (for Tensorboard and saving model)

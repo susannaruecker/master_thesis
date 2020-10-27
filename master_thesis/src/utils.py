@@ -17,7 +17,8 @@ import os.path
 ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 
 #DATA = ROOT / '200820_dataNLP' # alter Datensatz (noch ohne Spalte Ausreißer
-DATA = ROOT / '200921_dataNLP'
+#DATA = ROOT / '200921_dataNLP' # neuer
+DATA = ROOT / '201001_dataNLP' # neuer, mit Spalte 'prozentVerlag'
 
 META = ROOT / 'Dokumentation_Daten.txt'
 
@@ -31,26 +32,29 @@ def read_data(file): # for reading the individual publisher files
 
 def get_raw_df():
     df = pd.read_csv(DATA / 'combined.tsv', sep='\t')
-    # df = pd.read_csv(DATA / 'combined_score.tsv', sep='\t')
 
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
     return df
 
 def get_time_class(row, min, max):
-    if min <= row['tokensPerMinute'] <= max:
+    #if min <= row['tokensPerMinute'] <= max:
+    if min <= row['avgTimeOnPagePerWordcount'] <= max:
         return 1
     else:
         return 0
 
-def get_conditioned_df(min_pageviews = 50,
-                       max_pageviews = 1000000000, # dummy
+def get_conditioned_df(min_diff_pageviews_exits = 50,
                        min_wordcount = 1,
                        max_wordcount = 1000000000, # dummy
-                       min_zeilen = 6, #10, # some have very little zeilen, doesn't make sense (maybe because payed content?)
-                       min_tokensPerMinute = 20,
-                       max_tokensPerMinute = 500,
-                       max_avgTimeOnPage= 1200, # max 20 minutes
+                       min_zeilen = 10,
+                       max_zeilen = 100,
+                       min_avgTimeOnPagePerWordcount = 0.05,
+                       max_avgTimeOnPagePerWordcount = 5,
+                       min_avgTimeOnPage = 2,  # min 2 seconds
+                       max_avgTimeOnPage = 1200, # max 20 minutes
+                       min_prozentDpa = 50,
+                       min_prozentVerlag = 50,
                        delete_outliers = True,
                        delete_zeilen_mismatch = True, # delete articles where match of zeilen and wordcount ist far off
                        add_time_class = True, # adds a binary time_class label
@@ -62,25 +66,31 @@ def get_conditioned_df(min_pageviews = 50,
 
     # conditioning on columns and their values
 
-    df = df.loc[(df['pageviews'] >= min_pageviews) &
-                (df['pageviews'] <= max_pageviews) &
+    df = df.loc[(df['pageviews-exits'] >= min_diff_pageviews_exits) &
                 (df['wordcount'] >= min_wordcount) &  # to delete articles without text or erroneous data
                 (df['wordcount'] <= max_wordcount) &
                 (df['zeilen'] >= min_zeilen) &
+                (df['zeilen'] <= max_zeilen) &
+                (df['avgTimeOnPage'] >= min_avgTimeOnPage) &
                 (df['avgTimeOnPage'] <= max_avgTimeOnPage) &
-                (df['tokensPerMinute'] <= max_tokensPerMinute) &
-                (df['tokensPerMinute'] >= min_tokensPerMinute)
+                (df['avgTimeOnPagePerWordcount'] >= min_avgTimeOnPagePerWordcount) &
+                (df['avgTimeOnPagePerWordcount'] <= max_avgTimeOnPagePerWordcount) &
+                (df['prozentDpa'] >= min_prozentDpa) &
+                (df['prozentVerlag'] >= min_prozentVerlag)
                 ]
     if delete_outliers == True:
         df = df.loc[(df['ausreisser'] == 'nein')]
+
+    df = df[df.zeilen > 0]
+    df['wordsPerRow'] = df.wordcount / df.zeilen
+
     if delete_zeilen_mismatch == True:
-        df = df[df.zeilen > 0]
-        df['wordsPerRow'] = df.wordcount / df.zeilen
         avg = np.mean(df.wordsPerRow)
         std = np.std(df.wordsPerRow)
         df = df[(df.wordsPerRow >= avg-(2*std)) & (df.wordsPerRow <= avg+(2*std))]
+
     if add_time_class == True:
-        df['time_class'] = df.apply(lambda row: get_time_class(row=row, min=100, max=250), axis=1)
+        df['time_class'] = df.apply(lambda row: get_time_class(row=row, min=0.4, max=6), axis=1) # 100, 250
 
     print("Shape of remaining df after conditioning:", df.shape)
     return df
@@ -183,6 +193,9 @@ def add_meta_columns(df):
     print("averaging avgTimeOnPage per tokens etc...")
     # add a column: avg time divided by wordcount
     df['avgTimeOnPagePerWordcount'] = df.avgTimeOnPage/df.wordcount
+
+    # add a columns: avg time divided by zeilen
+    df['avgTimeOnPagePerRow'] = df.avgTimeOnPage/df.zeilen
 
     # add a columns: tokens per minute
     df['tokensPerMinute'] = df.wordcount / df.avgTimeOnPage * 60
@@ -388,3 +401,8 @@ def get_Vo():
         if c not in dct.values():
             lex.drop(columns=c, inplace=True)
     return lex
+
+
+if __name__ == "__main__":
+    test = get_conditioned_df()
+    print(test.time_class.value_counts())

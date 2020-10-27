@@ -19,7 +19,7 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
+MODEL = 'BERTAvg' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
 
 if MODEL == 'BERT':
     model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
@@ -42,7 +42,7 @@ df = utils.get_conditioned_df()
 df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
 
 # HYPERPARAMETERS
-EPOCHS = 4
+EPOCHS = 6
 BATCH_SIZE = 8
 FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
 MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
@@ -50,10 +50,10 @@ START = None # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-6 # before it was 1e-5
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc_new"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
 
 # setting up Tensorboard
-tensorboard_path = f'runs2/{identifier}'
+tensorboard_path = f'runs3/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 

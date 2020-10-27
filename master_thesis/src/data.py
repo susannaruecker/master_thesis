@@ -108,7 +108,7 @@ class Collater_BERT():
 
         lens = [len(x) for x in batch_input_ids]
         #print(lens)
-        max_len = max(*lens)
+        max_len = max(lens) # max_len = max(*lens)
         #print(max_len)
 
         tmp_input_ids = []
@@ -225,7 +225,7 @@ class Collater_CNN():
 
         lens = [len(x) for x in batch_input_matrices]
         #print(lens)
-        max_len = max(*lens)
+        max_len = max(lens) #max_len = max(*lens)
         #print(max_len)
 
         tmp_input_matrices = []
