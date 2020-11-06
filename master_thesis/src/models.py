@@ -209,3 +209,45 @@ class CNN_small(nn.Module):
         return out
 
 
+
+class FFN_BERT(nn.Module):
+    """Combines FFN and Bert.
+    """
+
+    def __init__(self, n_outputs):
+        super(FFN_BERT, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions = False,
+                                              output_hidden_states = True,
+                                              )
+
+        self.publisher_embs = nn.Embedding(5, 50)
+
+        self.ffn = nn.Sequential(nn.Linear(819, 256),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Linear(256, 64),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Linear(64, n_outputs),
+                                 )
+
+        #self.LReLU = nn.LeakyReLU(0.01)
+        #self.fc1 = nn.Linear(819, 256)
+        #self.fc2 = nn.Linear(256, 64)
+        #self.out = nn.Linear(64, n_outputs)
+
+
+    def forward(self, input_ids, attention_mask, textlength, publisher):
+        out_bert = self.bert(input_ids = input_ids, attention_mask = attention_mask)
+        hidden_state_cls = out_bert[1] # pooled output (hidden state of first token with some modifications)
+
+        publisher = self.publisher_embs(publisher).squeeze()
+        concatenated = torch.cat([hidden_state_cls, publisher, textlength], dim=1)
+
+        out = self.ffn(concatenated)
+
+        #out = self.LReLU(self.fc1(concatenated))
+        #out = self.LReLU(self.fc2(out))
+        #out = self.out(out)
+
+        return out
+

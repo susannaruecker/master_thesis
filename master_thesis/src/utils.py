@@ -18,7 +18,8 @@ ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 
 #DATA = ROOT / '200820_dataNLP' # alter Datensatz (noch ohne Spalte Ausreißer
 #DATA = ROOT / '200921_dataNLP' # neuer
-DATA = ROOT / '201001_dataNLP' # neuer, mit Spalte 'prozentVerlag'
+#DATA = ROOT / '201001_dataNLP' # neuer, mit Spalte 'prozentVerlag'
+DATA = ROOT / '201103_dataNLP' # neuer, mit Spalte 'text_crawling'
 
 META = ROOT / 'Dokumentation_Daten.txt'
 
@@ -31,7 +32,7 @@ def read_data(file): # for reading the individual publisher files
     return raw
 
 def get_raw_df():
-    df = pd.read_csv(DATA / 'combined.tsv', sep='\t')
+    df = pd.read_csv(DATA / 'combined_textCrawling.tsv', sep='\t')
 
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
@@ -132,8 +133,8 @@ def add_meta_columns(df):
     
     df = df.fillna('') # replacing Nan with emtpy string
       
-    # add columns 'city' and 'text_preprocessed'
-    print("preprocessing text...")
+    # add columns 'city' and 'textDpa_preprocessed'
+    print("preprocessing dpa text...")
     for n, ID in enumerate(df.index):
         print(n, end='\r')
         raw_text = df.loc[ID, 'text']
@@ -153,55 +154,69 @@ def add_meta_columns(df):
         
         text = text.replace('\n', ' ').strip() # delete linebreaks
         text = re.sub(' +', ' ', text) # just one space
-        df.loc[ID, 'text_preprocessed'] = text
-    
+        df.loc[ID, 'textDpa_preprocessed'] = text
+
+    # add columns 'textPublisher_preprocessed'
+    print("preprocessing publisher text...")
+    for n, ID in enumerate(df.index):
+        print(n, end='\r')
+        raw_text = df.loc[ID, 'textCrawling']
+        raw_text = raw_text.replace('\xa0', ' ')
+        text = raw_text.replace('\n', ' ').strip()  # delete linebreaks
+        text = re.sub(' +', ' ', text)  # just one space
+        df.loc[ID, 'textPublisher_preprocessed'] = text
+
     # deleting original 'text' to save space (good?)
     #df.drop(columns=['text'], inplace=True)
     
     # adding number of tokens and mean token length (ignoring punctuation)
     # (column "wordcount" already exists, slightly different outcome but okay)
     print("counting tokens...")
-    df['nr_tokens'] = [ len([ t for t in nltk.word_tokenize(text) if t not in string.punctuation])
-                        for text in df.text_preprocessed ]
+    df['nr_tokens_dpa'] = [ len([ t for t in nltk.word_tokenize(text) if t not in string.punctuation])
+                        for text in df.textDpa_preprocessed ]
 
-    df['mean_token_length'] = [ np.mean([ len(t) for t in nltk.word_tokenize(text) if t not in string.punctuation])
-                                for text in df.text_preprocessed ]
+    #df['mean_token_length'] = [ np.mean([ len(t) for t in nltk.word_tokenize(text) if t not in string.punctuation])
+    #                            for text in df.textDpa_preprocessed ]
 
     # adding also number of tokens in 'teaser' and 'titelH1'
-    df['nr_tokens_teaser'] = [ len([ t for t in nltk.word_tokenize(teaser) if t not in string.punctuation])
-                               for teaser in df.teaser ]
-    df['nr_tokens_titelH1'] = [ len([ t for t in nltk.word_tokenize(titel) if t not in string.punctuation])
-                                for titel in df.titelH1 ]
-    
-    # adding number of characters of text_preprocessed
-    df['nr_char'] = [ len(text) for text in df.text_preprocessed ]
+    #df['nr_tokens_teaser'] = [ len([ t for t in nltk.word_tokenize(teaser) if t not in string.punctuation])
+    #                           for teaser in df.teaser ]
+    #df['nr_tokens_titelH1'] = [ len([ t for t in nltk.word_tokenize(titel) if t not in string.punctuation])
+    #                            for titel in df.titelH1 ]
 
-    print("counting sentences...")
+    df['nr_tokens_publisher'] = [len([t for t in nltk.word_tokenize(text) if t not in string.punctuation])
+                       for text in df.textPublisher_preprocessed]
+
+    # adding number of characters of text_preprocessed
+    #df['nr_char'] = [ len(text) for text in df.textDpa_preprocessed ]
+
+    #print("counting sentences...")
     # adding also number of sentences and their mean length (in tokens without punctuation)
-    for index, row in df.iterrows():
-        text = df.loc[index, 'text_preprocessed']
-        sentence_list = nltk.sent_tokenize(text)
-        #print(sentence_list)
-        df.loc[index, 'nr_sentences'] = len(sentence_list)
-        nr_tokens_per_sent = []
-        for s in sentence_list:
-            token_list = nltk.word_tokenize(s)
-            token_list = [t for t in token_list if t not in string.punctuation ] # delete punctuation
-            nr_tokens_per_sent.append(len(token_list))
-        df.loc[index, 'mean_sentence_length'] = np.mean(nr_tokens_per_sent)
+    #for index, row in df.iterrows():
+    #    text = df.loc[index, 'textDpa_preprocessed']
+    #    sentence_list = nltk.sent_tokenize(text)
+    #    #print(sentence_list)
+    #    df.loc[index, 'nr_sentences'] = len(sentence_list)
+    #    nr_tokens_per_sent = []
+    #    for s in sentence_list:
+    #        token_list = nltk.word_tokenize(s)
+    #        token_list = [t for t in token_list if t not in string.punctuation ] # delete punctuation
+    #        nr_tokens_per_sent.append(len(token_list))
+    #    df.loc[index, 'mean_sentence_length'] = np.mean(nr_tokens_per_sent)
         
     print("averaging avgTimeOnPage per tokens etc...")
     # add a column: avg time divided by wordcount
-    df['avgTimeOnPagePerWordcount'] = df.avgTimeOnPage/df.wordcount
+    #df['avgTimeOnPagePerWordcount'] = df.avgTimeOnPage/df.wordcount
+    df['avgTimeOnPagePerWordcount'] = df.avgTimeOnPage / df.nr_tokens_publisher
 
     # add a columns: avg time divided by zeilen
     df['avgTimeOnPagePerRow'] = df.avgTimeOnPage/df.zeilen
 
     # add a columns: tokens per minute
-    df['tokensPerMinute'] = df.wordcount / df.avgTimeOnPage * 60
+    #df['tokensPerMinute'] = df.wordcount / df.avgTimeOnPage * 60
 
     # add a column: avg time divided by nr_char
-    df['avgTimeOnPagePerNr_char'] = df.avgTimeOnPage/df.nr_char
+    #df['avgTimeOnPagePerNr_char'] = df.avgTimeOnPage/df.nr_char
     
     # add a column: pageviews - exits (das sind also die pageviews bei denen time gezählt wird)
     df['pageviews-exits'] = df.pageviews-df.exits
@@ -245,6 +260,13 @@ def get_articles_where(df, meta_cat, label):
 #            rt.append(token.lemma_.lower()) # stopwords stay in, (skleans CountVectorizer deletes it later)
 #
 #        return " ".join(rt)
+
+# publisher to int dictionary
+publisher_encoding = {'TV': 0,
+                      'SZ': 1,
+                      'aachener': 2,
+                      'bonn': 3,
+                      'NOZ': 4}
 
 
 class Preprocessor():

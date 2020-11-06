@@ -16,8 +16,8 @@ def train_BOW_model(df,
                     preprocessor = None,
                     feature_type = 'abs',
                     create_or_load = 'create',
-                    max_features = 10000,
-                    text_base = 'text_preprocessed',
+                    max_features = 1000,
+                    text_base = 'textPublisher_preprocessed',
                     target = 'avgTimeOnPagePerWordcount'
                     ):
 
@@ -36,7 +36,7 @@ def train_BOW_model(df,
         print(stopwords[:10])
 
         # instantiate countVectorizer
-        MAX_NGRAM = 4
+        MAX_NGRAM = 5
         MIN_DF = 5
 
         vectorizer = CountVectorizer(analyzer='word',
@@ -120,6 +120,9 @@ def train_BOW_model(df,
     print("MSE: ", mean_squared_error(pred_dev, y_dev))
     print("MAE: ", mean_absolute_error(pred_dev, y_dev))
 
+    # print some predictions
+    print( [ p.round(2) for p in y_dev[:50] ])
+    print( [ p.round(2) for p in pred_dev[:50] ])
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / f'BOW_{feature_type}_{str(max_features)}.pkl'
@@ -127,17 +130,11 @@ def train_BOW_model(df,
 
 
 # get data (already conditionend on min_pageviews etc)
-df = utils.get_conditioned_df()
-
-#df = utils.get_raw_df()
-#df = df[df["pageviews-exits"] >= 50] # TODO: change!
-#df = df[df.wordcount > 0]
-#df = df[df.avgTimeOnPage > 0]
-
-#df = df[df.zeilen > 0]
-#df = df[df.prozentVerlag >= 80] # das macht es bei avgTimeOnPage nicht besser, bei avgTimeOnPagePer... bei MAE schon, bei Pearson nicht ???
-#df = df[df.publisher == 'aachener']
-#df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
+df = utils.get_raw_df()
+df = df[df.txtExists == True]
+df = df[df.nr_tokens_publisher >= 70]
+df = df[df.zeilen >= 10]
+print(df.shape)
 
 # preprocessor
 preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=False)
@@ -146,45 +143,13 @@ train_BOW_model(df = df,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 500, # 100000 is to big for memory)
-                text_base = 'text_preprocessed', #'teaser', #'text_preprocessed',
-                target = 'avgTimeOnPagePerWordcount' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
+                max_features = 300, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                text_base = 'textPublisher_preprocessed', #'teaser', #'text_preprocessed',
+                target = 'avgTimeOnPagePerWordcount' #'stickiness' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
                 )
 
 # to load the model
 # model = pickle.load(open(target_path, 'rb'))
 
-# TODO: note to self: without lemmatization it is even slightly better and a lot faster...
 
-# note: bei 1000 kam ca. Pearson = .46 raus, also ganz gut
-# note: bei 2000 ca. (0.3556820544408318, 1.4115783794433868e-129) also schlechter
-# note: bei 1100 und mit lemmatization, MAX_NGRAM=4: (0.45406266713934623, 9.582367468030329e-220)
-# bei 10000 mit rel (0.3650459438793716, 1.9179660256674083e-41) (egal ob mit oder ohne stopwörtern
-# bei 20000 mit rel und ohne lemmatize: (0.35747630479995424, 1.0697484492400376e-39)
-# bei 1000 rel delete nothing, no lemmatize (0.3821504439702175, 1.4454720934392103e-45)
-# bei 1000 abs delete_punct, no lemmatize (0.5839275078158184, 2.545271174941579e-117)
-# bei 2000 und sonst wie drüber: (0.5626587042320443, 2.871133357531568e-107)
-# bei 500 und sonst wie drüber: (0.5920846256028592, 2.236844477508473e-121)
-# bei 200 und sonst wie drüber: (0.586679425138092, 1.1226280086194277e-118)
-# bei 500 mit lemmatize: (0.5874837330825343, 4.483338884523782e-119)
-
-### neuer Datensatz, neues conditioning
-# 500: Pearson 0.54  MSE 0.101
-# 1000: Pearson 0.54 MSE:  0.101
-# bei 10000: Pearson 0.32 MSE: 0.224
-
-### noch neueres conditioning: pageviews-exits >= 50, min_prozentVerlag = 50, min_prozentDpa = 50
-# bei 500: Pearson 0.59, MSE 0.07
-# bei 1000: 0.58, MSE  0.073
-
-# min_prozentVerlag >= 70
-# Pearson 0.39, MSE 0.056
-
-# avgTimeOnPagePerRow ist ziemlich ähnlich wie avgTimeOnPagePerWordcount --> schade, ich hatte gehofft, es ist besser
-
-# avgTimeOnPage modellieren
-# Pearson nur 0.17 MAE 52,1 Sekunden --> ist das gut oder schlecht?
-# bei ganzem Datensatz (pageviews-exits >= 50) Pearson 0.209, MAE 52,8 also gleichgut/besser ???
-
-# tokensPerMinute
-# Pearson 0.47, MAE 92.3 (warum ist Pearson hier so viel schlechter, das ist doch eigentlich genau gleich wie avgTimeOnPagePerWordcount)
+# bei max_features = 300, Pearson 0.666, MAE 0.187, MSE 0.072

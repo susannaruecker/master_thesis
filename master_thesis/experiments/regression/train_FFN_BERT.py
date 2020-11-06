@@ -2,7 +2,7 @@
 
 import torch
 from torch import optim, nn
-from transformers import BertTokenizer, DistilBertTokenizer
+from transformers import BertTokenizer
 import numpy as np
 import scipy.stats as st
 from torch.utils.tensorboard import SummaryWriter
@@ -11,7 +11,7 @@ from master_thesis.src import utils, data, models
 
 import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
-#TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
+##TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
@@ -19,30 +19,15 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERTAvg' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
-
-if MODEL == 'BERT':
-    model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTModel':
-    model = models.Bert_regression(n_outputs=1)     # this is customized (dropout!) BertModel
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
-    model = models.Bert_averaging(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-
-#if MODEL == 'DistilBERT':
-#    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
-#    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-german-cased')
+model = models.FFN_BERT(n_outputs=1)
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 model.to(device)
 
-# get data (already conditionend on min_pageviews etc)
-#df = utils.get_conditioned_df()
 full = utils.get_raw_df()
 df = full[full.txtExists == True]
-df = df[df.nr_tokens_publisher >= 70]
-df = df[df.zeilen >= 10]
+#df = df[df.nr_tokens_publisher >= 70]
+#df = df[df.zeilen >= 10]
 print(df.head())
 print("size of used df:", df.shape)
 
@@ -55,7 +40,7 @@ START = None # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-5 # war auch mal 1e-6
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"FFNBERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_textCrawling/{identifier}'
@@ -67,11 +52,11 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
-collater = data.Collater_BERT()
+window = data.RandomWindow_FFN_BERT(start = 0, fixed_len = 500, min_len= None)
+collater = data.Collater_FFN_BERT()
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
-                                                         target = 'avgTimeOnPagePerWordcount', #'avgTimeOnPagePerWordcount', #stickiness
+dl_train, dl_dev, dl_test = data.create_DataLoaders_FFN_BERT(df=df,
+                                                         target = 'avgTimeOnPage',
                                                          text_base = 'textPublisher_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,
@@ -83,16 +68,15 @@ dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
 data = next(iter(dl_train))
 print(data.keys())
 input_ids = data['input_ids']
-#print(input_ids)
 print(input_ids.shape)
 attention_mask = data['attention_mask']
-#print(attention_mask)
 print(attention_mask.shape)
-print(data['target'].shape)
 
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=LR)
+# optimizer = optim.AdamW(model.parameters(), lr=LR)
+optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
+optimizer_ffn_embs = optim.Adam(list(model.ffn.parameters()) + list(model.publisher_embs.parameters()), lr=1e-3)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -111,8 +95,10 @@ def evaluate_model(model):
             print("-Batch", nr, end='\r')
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
+            textlength = d["textlength"].to(device)
+            publisher = d["publisher"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -143,9 +129,11 @@ for epoch in range(EPOCHS):
 
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
+        textlength = d["textlength"].to(device)
+        publisher = d["publisher"].to(device)
         targets = d["target"].to(device)
         # print(targets.shape)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -154,9 +142,14 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 1 == 0: # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
-            optimizer.step()
-            optimizer.zero_grad()
+        if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
+            #optimizer.step()
+            #optimizer.zero_grad()
+
+            optimizer_bert.step()
+            optimizer_ffn_embs.step()
+            optimizer_bert.zero_grad()
+            optimizer_ffn_embs.zero_grad()
 
         if batch_count % 100 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))

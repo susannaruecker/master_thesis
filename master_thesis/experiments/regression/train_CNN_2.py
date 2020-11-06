@@ -13,8 +13,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
 # get data (already conditionend on min_pageviews etc)
-df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
+full = utils.get_raw_df()
+df = full[full.txtExists == True]
+df = df[df.nr_tokens_publisher >= 70]
+df = df[df.zeilen >= 10]
+print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
 EPOCHS = 5
@@ -25,7 +28,7 @@ START = None
 LR = 1e-4
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_gradient_acc_smaller_newer"
+identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs2/{identifier}'
@@ -45,7 +48,7 @@ collater = data.Collater_CNN()
 
 dl_train, dl_dev, dl_test = data.create_DataLoaders_CNN(df = df,
                                                         target = 'avgTimeOnPagePerWordcount',
-                                                        text_base = 'text_preprocessed',
+                                                        text_base = 'textPublisher_preprocessed',
                                                         tokenizer = None, # uses default (spacy) tokenizer
                                                         embs = embs,
                                                         train_batch_size = BATCH_SIZE,

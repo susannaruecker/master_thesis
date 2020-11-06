@@ -38,19 +38,21 @@ elif MODEL == 'BERTAvg':                            # this uses averaged last hi
 model.to(device)
 
 # get data (already conditionend on min_pageviews etc)
-df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerWordcount']] # to save space
+df = utils.get_raw_df()
+df = df[df.txtExists == True]
+df = df[df.nr_tokens_publisher > 100]
+print(df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 3
+EPOCHS = 10
 BATCH_SIZE = 8
-FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
-MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
-START = None # random, if MAX_LEN is specified you probably want to start at 0
+FIXED_LEN = 100 #None # random, could be specified (e.g. 400 or 512)
+MIN_LEN = None #500 # min window size (not used im FIXED_LEN is given)
+START = 0 #None # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-5 # before it was 1e-5
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_new"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs/{identifier}'
@@ -66,8 +68,8 @@ window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= M
 collater = data.Collater_BERT()
 
 dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
-                                                         target = 'avgTimeOnPagePerWordcount',
-                                                         text_base = 'text_preprocessed',
+                                                         target = 'avgTimeOnPage', #'avgTimeOnPagePerWordcount',
+                                                         text_base = 'textPublisher_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,
                                                          val_batch_size= BATCH_SIZE,
