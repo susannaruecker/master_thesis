@@ -290,6 +290,32 @@ class INWT_Dataset_FFN_BERT(Dataset):
         return rt
 
 
+class INWT_Dataset_baseline(Dataset):
+
+    def __init__(self, df, target, text_base):
+        self.df = df
+        self.text_base = text_base
+        self.target = target
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, item):
+        text = str(self.df.loc[item, self.text_base])
+        target = np.array(self.df.loc[item, self.target])
+        nr_tokens = int(self.df.loc[item, 'nr_tokens_publisher'])
+        publisher = utils.publisher_encoding[str(self.df.loc[item, 'publisher'])]
+
+        rt = {  # 'text': text,
+            'target': torch.tensor(target, dtype=torch.float).unsqueeze(dim=-1),  # unsqueezing so shape (batch_size,1)
+            'textlength': torch.tensor(nr_tokens, dtype=torch.float).unsqueeze(dim=-1),
+            'publisher': torch.tensor(publisher, dtype = torch.long).unsqueeze(dim=-1)
+        }
+
+        return rt
+
+
+
 class RandomWindow_FFN_BERT(object):
     """
     returns a window from the input_ids
@@ -477,3 +503,23 @@ def create_DataLoaders_FFN_BERT(df, target, text_base, tokenizer, train_batch_si
 
     return dl_train, dl_dev, dl_test
 
+def create_DataLoaders_baseline(df, target, text_base, train_batch_size=12, val_batch_size = 12, transform=None, collater=None):
+    df_train, df_dev, df_test = create_train_dev_test(df=df, random_seed=123)
+
+    # creating DataSets
+    ds_train = INWT_Dataset_baseline(df=df_train,
+                                 target=target,
+                                 text_base=text_base)
+    ds_dev = INWT_Dataset_baseline(df=df_dev,
+                               target=target,
+                               text_base=text_base)
+    ds_test = INWT_Dataset_baseline(df=df_test,
+                                target=target,
+                                text_base=text_base)
+
+    # creating DataLoaders
+    dl_train = DataLoader(ds_train, batch_size=train_batch_size, num_workers=4, shuffle=True, collate_fn=collater)
+    dl_dev = DataLoader(ds_dev, batch_size=val_batch_size, num_workers=4, shuffle=True, collate_fn=collater)
+    dl_test = DataLoader(ds_test, batch_size=val_batch_size, num_workers=4, shuffle=True, collate_fn=collater)
+
+    return dl_train, dl_dev, dl_test

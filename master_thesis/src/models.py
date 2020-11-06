@@ -225,15 +225,12 @@ class FFN_BERT(nn.Module):
 
         self.ffn = nn.Sequential(nn.Linear(819, 256),
                                  nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
                                  nn.Linear(256, 64),
                                  nn.LeakyReLU(0.01),
-                                 nn.Linear(64, n_outputs),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(64, n_outputs)
                                  )
-
-        #self.LReLU = nn.LeakyReLU(0.01)
-        #self.fc1 = nn.Linear(819, 256)
-        #self.fc2 = nn.Linear(256, 64)
-        #self.out = nn.Linear(64, n_outputs)
 
 
     def forward(self, input_ids, attention_mask, textlength, publisher):
@@ -249,5 +246,30 @@ class FFN_BERT(nn.Module):
         #out = self.LReLU(self.fc2(out))
         #out = self.out(out)
 
+        return out
+
+
+class baseline(nn.Module):
+    """Just the FFN with textlength and publisher.
+    """
+
+    def __init__(self, n_outputs):
+        super(baseline, self).__init__()
+
+        self.publisher_embs = nn.Embedding(5, 50)
+
+        self.ffn = nn.Sequential(nn.Linear(51, 32),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(32, 16),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(16, n_outputs),
+                                 )
+
+    def forward(self, textlength, publisher):
+        publisher = self.publisher_embs(publisher).squeeze()
+        concatenated = torch.cat([publisher, textlength], dim=1)
+        out = self.ffn(concatenated)
         return out
 
