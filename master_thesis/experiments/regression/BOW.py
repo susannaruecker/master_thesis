@@ -17,8 +17,8 @@ def train_BOW_model(df,
                     feature_type = 'abs',
                     create_or_load = 'create',
                     max_features = 1000,
-                    text_base = 'textPublisher_preprocessed',
-                    target = 'avgTimeOnPagePerWordcount'
+                    text_base = 'article_text',
+                    target = 'avgTimeOnPage'
                     ):
 
     # create splits
@@ -121,8 +121,8 @@ def train_BOW_model(df,
     print("MAE: ", mean_absolute_error(pred_dev, y_dev))
 
     # print some predictions
-    print( [ p.round(2) for p in y_dev[:50] ])
-    print( [ p.round(2) for p in pred_dev[:50] ])
+    print("true:", [ p.round(2) for p in y_dev[:50] ])
+    print("pred:", [ p.round(2) for p in pred_dev[:50] ])
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / f'BOW_{feature_type}_{str(max_features)}.pkl'
@@ -131,10 +131,11 @@ def train_BOW_model(df,
 
 # get data (already conditionend on min_pageviews etc)
 df = utils.get_raw_df()
-df = df[df.txtExists == True]
-df = df[df.nr_tokens_publisher >= 70]
-df = df[df.zeilen >= 10]
-print(df.shape)
+df = df[df.nr_tokens_text >= 50]
+#df = df[df.txtExists == True]
+#df = df[df.nr_tokens_publisher >= 70]
+#df = df[df.zeilen >= 10]
+print("used df:", df.shape)
 
 # preprocessor
 preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=False)
@@ -143,9 +144,9 @@ train_BOW_model(df = df,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 300, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
-                text_base = 'textPublisher_preprocessed', #'teaser', #'text_preprocessed',
-                target = 'avgTimeOnPagePerWordcount' #'stickiness' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
+                max_features = 100, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                text_base = 'article_text', #'teaser', #'text_preprocessed',
+                target = 'avgTimeOnPage' #'stickiness' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
                 )
 
 # to load the model
@@ -153,3 +154,14 @@ train_BOW_model(df = df,
 
 
 # bei max_features = 300, Pearson 0.666, MAE 0.187, MSE 0.072
+
+# neue Daten (groß, aber nur SZ und TV), modelling avgTimeOnPage
+# bei 100: r: 0.214, MSE: 1613.294, MAE: 29.080
+# bei 500: r: 0.295, MSE: 1544.790, MAE:  28.463
+# bei 1000 : r: 0.319, MSE: 1523.388, MAE: 28.100
+# bei 2000: r: 0.343, MSE: 1397.636, 27.701
+# bei 5000: r: 0.323, MSE: 1581.458, MAE: 28.897
+
+# neuere Daten (mit NOZ dabei)
+# bei 100: r: 0.541, MSE: 9148.856, MAE: 57.0092
+# bei 500: r: 0.577, MSE: 9284.085, MAE: 54.655

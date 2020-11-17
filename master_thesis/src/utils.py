@@ -32,11 +32,54 @@ def read_data(file): # for reading the individual publisher files
     return raw
 
 def get_raw_df():
-    df = pd.read_csv(DATA / 'combined_textCrawling.tsv', sep='\t')
+    #df = pd.read_csv(DATA / 'combined_textCrawling.tsv', sep='\t') # mit dem hier sind die bisherigen gelaufen
 
+    # die hier sind die neuen (mit meinen Texten)
+    path_SZ = ROOT / '201112_dataNLP_SZ_TV/201112_SZ_article_text.txt'
+    path_TV = ROOT / '201112_dataNLP_SZ_TV/201112_TV_article_text.txt'
+    path_NOZ = ROOT / '201117_dataNLP_NOZ/201117_NOZ_article_text.txt'
+
+    SZ = pd.read_csv(path_SZ, sep='\t', index_col = 'articleId')
+    TV = pd.read_csv(path_TV, sep='\t', index_col = 'articleId')
+    NOZ = pd.read_csv(path_NOZ, sep='\t', index_col='articleId')
+
+    SZ['publisher'] = 'SZ'
+    TV['publisher'] = 'TV'
+    NOZ['publisher'] = 'NOZ'
+
+    SZ.rename('SZ_{}'.format, inplace=True)
+    TV.rename('TV_{}'.format, inplace=True)
+    NOZ.rename('NOZ_{}'.format, inplace=True)
+
+    #print(SZ.head())
+    #print(TV.head())
+    #print(NOZ.head())
+
+    SZ['nr_tokens_publisher'] = SZ["nr_tokens_text"] # das ist nur temporär, weil so gerade in data.py die Textlänge heißt...
+    TV['nr_tokens_publisher'] = TV["nr_tokens_text"]
+    NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
+
+    columns = set(SZ.columns).intersection(TV.columns).intersection(NOZ.columns)
+    #print(columns)
+
+    df = pd.concat([SZ[columns], TV[columns], NOZ[columns]])
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
     return df
+
+def get_text(publisher, ID):
+    if publisher in ['SZ', 'TV']:
+        folder = ROOT / '201112_dataNLP_SZ_TV' / publisher / 'txt'
+    if publisher == 'NOZ':
+        folder = ROOT / '201117_dataNLP_NOZ' / publisher / 'txt'
+
+    with open(folder / f"ID_{ID}.txt", "r") as f:
+        text = f.read()
+        text = text.replace('\n', ' ').strip()  # delete linebreaks
+        text = re.sub(' +', ' ', text)  # just one space
+        text = text.replace(u'\xa0', u' ')
+    return text
+
 
 def get_time_class(row, min, max):
     #if min <= row['tokensPerMinute'] <= max:

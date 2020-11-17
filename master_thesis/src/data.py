@@ -357,6 +357,7 @@ class RandomWindow_FFN_BERT(object):
         attention_mask = attention_mask[start:end]
         target = target
 
+
         return {'input_ids': input_ids, 'attention_mask': attention_mask, 'target': target,
                 'textlength': textlength, 'publisher': publisher}
 

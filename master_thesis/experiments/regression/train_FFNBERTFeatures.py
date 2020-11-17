@@ -2,36 +2,47 @@
 
 import torch
 from torch import optim, nn
-import pandas as pd
+from transformers import BertTokenizer
 import numpy as np
 import scipy.stats as st
 from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
 
+import logging
+logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
+##TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-# get data (already conditionend on min_pageviews etc)
+# get pretrained model and tokenizer from huggingface's transformer library
+PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
+
+model = models.FFN_BERTFeatures(n_outputs=1)
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+
+model.to(device)
+
 full = utils.get_raw_df()
-df = full
-#df = full[full.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
+df = full[full.txtExists == True]
+df = df[df.nr_tokens_publisher >= 70]
 #df = df[df.zeilen >= 10]
+print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 5
+EPOCHS = 20
 BATCH_SIZE = 8
-FIXED_LEN = 300
-MIN_LEN = None #500
-START = 0 # None
-LR = 1e-4
+FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
+MIN_LEN = None # min window size (not used im FIXED_LEN is given)
+START = 0 # random, if MAX_LEN is specified you probably want to start at 0
+LR = 1e-3
 
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}"
+identifier = f"FFNBERTFeatures_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -41,48 +52,38 @@ print(f"logging with Tensorboard to path {tensorboard_path}")
 # for saving model after each epoch
 model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
-embs = utils.load_fasttext_vectors(limit = None)
-EMBS_DIM = 300
-
 # building train-dev-test split, their DataSets and DataLoaders
 
-window = data.RandomWindow_CNN(start = START, fixed_len = FIXED_LEN, min_len = MIN_LEN)
-collater = data.Collater_CNN()
+window = data.RandomWindow_FFN_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
+collater = data.Collater_FFN_BERT()
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_CNN(df = df,
-                                                        target = TARGET,
-                                                        text_base = 'article_text',
-                                                        tokenizer = None, # uses default (spacy) tokenizer
-                                                        embs = embs,
-                                                        train_batch_size = BATCH_SIZE,
-                                                        val_batch_size= BATCH_SIZE,
-                                                        transform = window,
-                                                        collater = collater)
+dl_train, dl_dev, dl_test = data.create_DataLoaders_FFN_BERT(df=df,
+                                                         target = TARGET,
+                                                         text_base = 'textPublisher_preprocessed',
+                                                         tokenizer = tokenizer,
+                                                         train_batch_size = BATCH_SIZE,
+                                                         val_batch_size= BATCH_SIZE,
+                                                         transform = window,
+                                                         collater = collater)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
 print(data.keys())
-input_matrix = data['input_matrix']
-print(input_matrix.shape)
-#print(data['target'])
-print(data['target'].shape)
+input_ids = data['input_ids']
+print(input_ids.shape)
+attention_mask = data['attention_mask']
+print(attention_mask.shape)
 
-#model = models.CNN(num_outputs = 1,
-#                   embs_dim = EMBS_DIM,
-#                   filter_sizes=[3, 4, 5],
-#                   num_filters=[100,100,100]
-#                   )
-
-model = models.CNN_small(num_outputs=1,
-                         embs_dim=EMBS_DIM,
-                         filter_sizes=[3, 4, 5],
-                         num_filters=[50,50,50]) # try a smaller model
-
-model.to(device)
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=LR) # vorher 1e-3 Adam? (lr=1e-5 ist jedenfalls nicht gut!)
-#optimizer = optim.Adadelta(model.parameters(), lr=LR, rho=0.95) # den hier hier nutzt das Tutorial vom CNN, war aber bei mir schlecht
+optimizer = optim.AdamW(model.baseline_in_FFNBERTFeatures.parameters(), lr=LR) # only update FFN, NOT Bert
+
+
+#optimizer_only_bert = optim.AdamW(list(model.bert.parameters()) + list(model.fc_bert.parameters()), lr=LR)
+# optimizer wieder aufteilen? oder FFN gar nicht weitertrainieren
+# auch versuchen: mal baseline langsamer (wie Bert) trainieren
+# 5e-5
+
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -99,9 +100,12 @@ def evaluate_model(model):
     with torch.no_grad():
         for nr, d in enumerate(dl_dev):
             print("-Batch", nr, end='\r')
-            input_matrix = d["input_matrix"].to(device)
+            input_ids = d["input_ids"].to(device)
+            attention_mask = d["attention_mask"].to(device)
+            textlength = d["textlength"].to(device)
+            publisher = d["publisher"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_matrix)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -130,9 +134,12 @@ for epoch in range(EPOCHS):
         print("-Batch", nr, end='\r')
         batch_count += 1
 
-        input_matrix = d["input_matrix"].to(device)
+        input_ids = d["input_ids"].to(device)
+        attention_mask = d["attention_mask"].to(device)
+        textlength = d["textlength"].to(device)
+        publisher = d["publisher"].to(device)
         targets = d["target"].to(device)
-        outputs = model(input_matrix)
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -141,9 +148,12 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 5 == 0: # vorher % 5 # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
+        if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
             optimizer.step()
             optimizer.zero_grad()
+
+            #optimizer_only_bert.step()
+            #optimizer_only_bert.zero_grad()
 
         if batch_count % 100 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))

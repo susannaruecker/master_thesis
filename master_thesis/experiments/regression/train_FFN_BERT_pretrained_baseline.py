@@ -2,7 +2,7 @@
 
 import torch
 from torch import optim, nn
-from transformers import BertTokenizer, DistilBertTokenizer
+from transformers import BertTokenizer
 import numpy as np
 import scipy.stats as st
 from torch.utils.tensorboard import SummaryWriter
@@ -11,7 +11,7 @@ from master_thesis.src import utils, data, models
 
 import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
-#TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
+##TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
@@ -19,46 +19,42 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERT' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
-
-if MODEL == 'BERT':
-    model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTModel':
-    model = models.Bert_regression(n_outputs=1)     # this is customized (dropout!) BertModel
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
-    model = models.Bert_averaging(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-
-#if MODEL == 'DistilBERT':
-#    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
-#    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-german-cased')
+model = models.FFN_BERT_pretrained(n_outputs=1)
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 model.to(device)
 
-# get data (already conditionend on min_pageviews etc)
-#df = utils.get_conditioned_df()
 full = utils.get_raw_df()
-df = full
-#df = full[full.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
+df = full[full.txtExists == True]
+df = df[df.nr_tokens_publisher >= 70]
 #df = df[df.zeilen >= 10]
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 5
+EPOCHS = 20
 BATCH_SIZE = 8
 FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-5 # war auch mal 1e-6
+LR = 1e-5
 
 TARGET = 'avgTimeOnPage'
+# new: load the parameters from the already trained basline model
+baseline_pretrained_identifier = f"baseline_EP150_BS8_LR0.001_{TARGET}"
+baseline_pretrained_path = utils.OUTPUT / 'saved_models' / f'{baseline_pretrained_identifier}'
+print(f"Loading state dict from baseline model: {baseline_pretrained_identifier}")
+#model.load_state_dict(torch.load(baseline_pretrained_path), strict=False) # das war das ersta
+model.baseline_in_FFN_BERT.load_state_dict(torch.load(baseline_pretrained_path), strict=True) #TODO # das ist aktuell
+# TODO: das scheint irgendwie nicht das gleiche zu sein (zweiteres funktioniert, ersteres wohl eher nicht, siehe Tensorboard)
+# TODO: Gewichte händisch vergleichen, ob alles richtig! Ist ein dictionary
+
+#model.load_state_dict(torch.load(PATH, map_location="cuda:0"))  # möglicherweise nötig, falls baseline auf CPU trainiert wurde?
+#model.to(device)
+
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_SZ_TV"
+identifier = f"FFNBERT_pretrained_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_mask_0.3"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -70,12 +66,13 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
-collater = data.Collater_BERT()
+window = data.RandomWindow_FFN_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
+collater = data.Collater_FFN_BERT()
+mask_words = True # masking some words in input (so, putting zeros in attention mask)
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
-                                                         target = TARGET, #'avgTimeOnPagePerWordcount', #stickiness
-                                                         text_base = 'article_text',
+dl_train, dl_dev, dl_test = data.create_DataLoaders_FFN_BERT(df=df,
+                                                         target = TARGET,
+                                                         text_base = 'textPublisher_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,
                                                          val_batch_size= BATCH_SIZE,
@@ -86,16 +83,19 @@ dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
 data = next(iter(dl_train))
 print(data.keys())
 input_ids = data['input_ids']
-#print(input_ids)
 print(input_ids.shape)
 attention_mask = data['attention_mask']
-#print(attention_mask)
 print(attention_mask.shape)
-print(data['target'].shape)
 
 
 # loss and optimizer
 optimizer = optim.AdamW(model.parameters(), lr=LR)
+
+#optimizer_only_bert = optim.AdamW(list(model.bert.parameters()) + list(model.fc_bert.parameters()), lr=LR)
+# optimizer wieder aufteilen? oder FFN gar nicht weitertrainieren
+# auch versuchen: mal baseline langsamer (wie Bert) trainieren
+# 5e-5
+
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -114,8 +114,10 @@ def evaluate_model(model):
             print("-Batch", nr, end='\r')
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
+            textlength = d["textlength"].to(device)
+            publisher = d["publisher"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -146,9 +148,17 @@ for epoch in range(EPOCHS):
 
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
+        textlength = d["textlength"].to(device)
+        publisher = d["publisher"].to(device)
         targets = d["target"].to(device)
-        # print(targets.shape)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        if mask_words == True: # masking some of the input ids (better way to do this?
+            indices = np.random.choice(np.arange(len(attention_mask.flatten())), replace=False,
+                                       size=int(len(attention_mask.flatten()) * 0.3))
+            flat = attention_mask.flatten()
+            flat[indices] = 0
+            attention_mask = flat.reshape(attention_mask.shape)
+
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -157,9 +167,12 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 5 == 0: # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
+        if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
             optimizer.step()
             optimizer.zero_grad()
+
+            #optimizer_only_bert.step()
+            #optimizer_only_bert.zero_grad()
 
         if batch_count % 100 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))

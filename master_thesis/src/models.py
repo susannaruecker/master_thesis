@@ -211,7 +211,7 @@ class CNN_small(nn.Module):
 
 
 class FFN_BERT(nn.Module):
-    """Combines FFN and Bert.
+    """Combines FFN and Bert: Concatenating Bert-Output and meta data.
     """
 
     def __init__(self, n_outputs):
@@ -221,12 +221,15 @@ class FFN_BERT(nn.Module):
                                               output_hidden_states = True,
                                               )
 
-        self.publisher_embs = nn.Embedding(5, 50)
+        self.publisher_embs = nn.Embedding(5, 100)
 
-        self.ffn = nn.Sequential(nn.Linear(819, 256),
+        self.ffn = nn.Sequential(nn.Linear(869, 256), # 869 = 768 (Bert) + 100 (Embs) + 1 (textlength)
                                  nn.LeakyReLU(0.01),
                                  nn.Dropout(p=0.3),
-                                 nn.Linear(256, 64),
+                                 nn.Linear(256, 128),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(128, 64),
                                  nn.LeakyReLU(0.01),
                                  nn.Dropout(p=0.3),
                                  nn.Linear(64, n_outputs)
@@ -241,11 +244,6 @@ class FFN_BERT(nn.Module):
         concatenated = torch.cat([hidden_state_cls, publisher, textlength], dim=1)
 
         out = self.ffn(concatenated)
-
-        #out = self.LReLU(self.fc1(concatenated))
-        #out = self.LReLU(self.fc2(out))
-        #out = self.out(out)
-
         return out
 
 
@@ -256,20 +254,123 @@ class baseline(nn.Module):
     def __init__(self, n_outputs):
         super(baseline, self).__init__()
 
-        self.publisher_embs = nn.Embedding(5, 50)
+        self.LReLU = nn.LeakyReLU(0.01)
+        self.dropout = nn.Dropout(p=0.3)
 
-        self.ffn = nn.Sequential(nn.Linear(51, 32),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(32, 16),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(16, n_outputs),
-                                 )
+        self.publisher_embs = nn.Embedding(5, 100)
+        self.fc1 = nn.Linear(101, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.out = nn.Linear(64, n_outputs)
 
     def forward(self, textlength, publisher):
         publisher = self.publisher_embs(publisher).squeeze()
         concatenated = torch.cat([publisher, textlength], dim=1)
-        out = self.ffn(concatenated)
+        out_fc1 = self.dropout(self.LReLU(self.fc1(concatenated)))
+        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
+        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
+        out = self.out(out_fc3)
+
         return out
 
+class baseline_in_FFN_BERT(baseline):
+    """
+    Erbt von baseline (hat daher gleiche Layernamen und Parameter),
+    ABER fügt Bert zu einem der Layer in forward-hinzu hinzu.
+    """
+
+    def forward(self, textlength, publisher, bert_output):
+        publisher = self.publisher_embs(publisher).squeeze()
+        concatenated = torch.cat([publisher, textlength], dim=1)
+        out_fc1 = self.dropout(self.LReLU(self.fc1(concatenated)))
+        out_fc1_bert = out_fc1 + bert_output                          # adds Bert-output (modified with one linear layer)
+                                                                      # size 256
+        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1_bert)))
+        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
+        out = self.out(out_fc3)
+
+        return out
+
+class baseline_in_FFNBERTFeatures(baseline):
+
+    def __init__(self, n_outputs):
+        super(baseline_in_FFNBERTFeatures, self).__init__(n_outputs=1)
+        self.fc1 = nn.Linear(869, 256)
+
+
+    def forward(self, textlength, publisher, bert_output):
+        publisher = self.publisher_embs(publisher).squeeze()
+        concatenated = torch.cat([bert_output, publisher, textlength], dim=1) # bert_output is avg of last hidden states
+        #print(concatenated.size())
+        out_fc1 = self.dropout(self.LReLU(self.fc1(concatenated))) # from size 869 to 256
+        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
+        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
+        out = self.out(out_fc3)
+
+        return out
+
+
+class FFN_BERT_pretrained(nn.Module):
+    """Combines FFN and Bert: Using parameters of pretrained baseline, adding BERT output.
+    """
+
+    def __init__(self, n_outputs):
+        super(FFN_BERT_pretrained, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions = False,
+                                              output_hidden_states = True)
+        self.fc_bert = nn.Linear(768, 256)
+        self.LReLU = nn.LeakyReLU(0.01)
+        self.dropout = nn.Dropout(p=0.3)
+        self.baseline_in_FFN_BERT = baseline_in_FFN_BERT(n_outputs=1)
+
+
+    def forward(self, input_ids, attention_mask, textlength, publisher):
+        out_bert = self.bert(input_ids = input_ids, attention_mask = attention_mask)
+        hidden_state_cls = out_bert[1] # pooled output (last hidden state of first token with some modifications)
+        #hidden_state_cls = out_bert[0][:,0,:] # last hidden state of first token (no modifications)
+        # auch hier stattdessen mal Mitteln über die last hidden states aller Tokens ausprobieren?
+
+        bert_output = self.dropout(self.LReLU(self.fc_bert(hidden_state_cls)))
+
+        out = self.baseline_in_FFN_BERT(textlength=textlength, publisher=publisher, bert_output=bert_output)
+
+        return out
+
+class FFN_BERTFeatures(nn.Module):
+
+    def __init__(self, n_outputs):
+        super(FFN_BERTFeatures, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions = False,
+                                              output_hidden_states = True)
+
+        self.baseline_in_FFNBERTFeatures = baseline_in_FFNBERTFeatures(n_outputs=1)
+
+
+    def forward(self, input_ids, attention_mask, textlength, publisher):
+        out_bert = self.bert(input_ids = input_ids, attention_mask = attention_mask)
+        last_hidden_states = out_bert[0]  # stimmt das?
+        #print(last_hidden_states.size())
+        avg_last_hidden = torch.mean(last_hidden_states, dim=1)  # averaging the last hidden states of ALL tokens in sequence
+        #print(avg_last_hidden.size())
+
+        out = self.baseline_in_FFNBERTFeatures(textlength = textlength, publisher=publisher, bert_output = avg_last_hidden)
+        return out
+
+
+# mal anders: die Metadaten in Bert unten reinschieben, also auf Bert-Dimension bringen (FFN) und dann als sozusagen zwei "zusätzliche" Wörter für
+# Bert behandeln, also irgendwie auf die unterste Bert-Layer als "Wort" bringen.
+# publisher_EMbedings sind das schon
+# Textlänge mit FFN
+# dazu müsste man wohl so richtig in Bert rumschnippeln, also in den huggingface-Methoden an die Embedding-Methode Dinge dranhängen (erben etc)
+
+# timestep-wise dropout probieren? gemeint: Wörter im Text maskieren (Iyyer deep composition rivals...
+# https://www.aclweb.org/anthology/P15-1162/
+# word dropout
+# attention mask ändern! dropout auf attention-mask ist möglicherweise schon alles!
+
+# das dann natürlich auch (zuerst) auch in einer Bert-Baseline machen, also Wort-dropout, scheduler, learning-rate ändern
+# aaaaaaaaaah
+
+# aus der Signal-Nachricht (10.November): Bert einfach als Feature-Extraktor nehmen und nicht updaten!

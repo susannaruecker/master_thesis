@@ -20,7 +20,8 @@ model = models.baseline(n_outputs=1)
 model.to(device)
 
 full = utils.get_raw_df()
-df = full[full.txtExists == True]
+df = full
+#df = full[full.txtExists == True]
 #df = df[df.nr_tokens_publisher >= 70]
 #df = df[df.zeilen >= 10]
 print(df.head())
@@ -28,12 +29,13 @@ print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
 EPOCHS = 100
-BATCH_SIZE = 12
-LR = 1e-3
+BATCH_SIZE = 8
+LR = 1e-3 # 1e-3
 
+TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"baseline_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"baseline_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ_TV"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_textCrawling/{identifier}'
@@ -46,8 +48,8 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 # building train-dev-test split, their DataSets and DataLoaders
 
 dl_train, dl_dev, dl_test = data.create_DataLoaders_baseline(df=df,
-                                                         target = 'avgTimeOnPage',
-                                                         text_base = 'textPublisher_preprocessed',
+                                                         target = TARGET,
+                                                         text_base = 'article_text', #'textPublisher_preprocessed',
                                                          train_batch_size = BATCH_SIZE,
                                                          val_batch_size= BATCH_SIZE,
                                                          transform = None,
@@ -59,7 +61,8 @@ print(data.keys())
 
 
 # loss and optimizer
-optimizer_ffn_embs = optim.Adam(list(model.ffn.parameters()) + list(model.publisher_embs.parameters()), lr=LR)
+#optimizer_ffn_embs = optim.Adam(list(model.ffn.parameters()) + list(model.publisher_embs.parameters()), lr=LR)
+optimizer = optim.Adam(model.parameters(), lr=LR)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -122,11 +125,8 @@ for epoch in range(EPOCHS):
         loss.backward()
 
         if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
-            #optimizer.step()
-            #optimizer.zero_grad()
-
-            optimizer_ffn_embs.step()
-            optimizer_ffn_embs.zero_grad()
+            optimizer.step()
+            optimizer.zero_grad()
 
         if batch_count % 100 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))

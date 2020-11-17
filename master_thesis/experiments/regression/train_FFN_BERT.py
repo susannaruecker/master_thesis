@@ -25,25 +25,28 @@ tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 model.to(device)
 
 full = utils.get_raw_df()
-df = full[full.txtExists == True]
+df = full
+#df = full[full.txtExists == True]
 #df = df[df.nr_tokens_publisher >= 70]
 #df = df[df.zeilen >= 10]
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 6
+EPOCHS = 5
 BATCH_SIZE = 8
-FIXED_LEN = None # random, could be specified (e.g. 400 or 512)
-MIN_LEN = 500 # min window size (not used im FIXED_LEN is given)
-START = None # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-5 # war auch mal 1e-6
+FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
+MIN_LEN = None # min window size (not used im FIXED_LEN is given)
+START = 0 # random, if MAX_LEN is specified you probably want to start at 0
+LR = 1e-5
+
+TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"FFNBERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}"
+identifier = f"FFNBERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ_TV"
 
 # setting up Tensorboard
-tensorboard_path = f'runs_textCrawling/{identifier}'
+tensorboard_path = f'runs_{TARGET}/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
@@ -52,12 +55,12 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 # building train-dev-test split, their DataSets and DataLoaders
 
-window = data.RandomWindow_FFN_BERT(start = 0, fixed_len = 500, min_len= None)
+window = data.RandomWindow_FFN_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
 collater = data.Collater_FFN_BERT()
 
 dl_train, dl_dev, dl_test = data.create_DataLoaders_FFN_BERT(df=df,
-                                                         target = 'avgTimeOnPage',
-                                                         text_base = 'textPublisher_preprocessed',
+                                                         target = TARGET,
+                                                         text_base = 'article_text', #'textPublisher_preprocessed',
                                                          tokenizer = tokenizer,
                                                          train_batch_size = BATCH_SIZE,
                                                          val_batch_size= BATCH_SIZE,
