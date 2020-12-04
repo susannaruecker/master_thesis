@@ -12,6 +12,8 @@ import wget
 import gzip
 import os
 import os.path
+from scipy.stats import percentileofscore
+
 
 #ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
 ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
@@ -47,6 +49,11 @@ def get_raw_df():
     TV['publisher'] = 'TV'
     NOZ['publisher'] = 'NOZ'
 
+    NOZ['titel'] = NOZ["titel_html"]
+
+    NOZ = NOZ[NOZ.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
+    NOZ = NOZ.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
+
     SZ.rename('SZ_{}'.format, inplace=True)
     TV.rename('TV_{}'.format, inplace=True)
     NOZ.rename('NOZ_{}'.format, inplace=True)
@@ -59,13 +66,49 @@ def get_raw_df():
     TV['nr_tokens_publisher'] = TV["nr_tokens_text"]
     NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
 
+
     columns = set(SZ.columns).intersection(TV.columns).intersection(NOZ.columns)
-    #print(columns)
+    print("Shared columns:", columns)
 
     df = pd.concat([SZ[columns], TV[columns], NOZ[columns]])
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
     return df
+
+def get_publisher_df(publ):
+    # die hier sind die neuen (mit meinen Texten)
+    if publ == "TV":
+        path_TV = ROOT / '201112_dataNLP_SZ_TV/201112_TV_article_text.txt'
+        TV = pd.read_csv(path_TV, sep='\t', index_col='articleId')
+        TV['publisher'] = 'TV'
+        TV.rename('TV_{}'.format, inplace=True)
+        TV['nr_tokens_publisher'] = TV["nr_tokens_text"]
+        df = TV
+
+    if publ == "SZ":
+        path_SZ = ROOT / '201112_dataNLP_SZ_TV/201112_SZ_article_text.txt'
+        SZ = pd.read_csv(path_SZ, sep='\t', index_col='articleId')
+        SZ['publisher'] = 'SZ'
+        SZ.rename('SZ_{}'.format, inplace=True)
+        SZ['nr_tokens_publisher'] = SZ["nr_tokens_text"]  # nur temporär, weil so gerade in data.py die Textlänge heißt...
+        df = SZ
+
+    if publ == "NOZ":
+        path_NOZ = ROOT / '201117_dataNLP_NOZ/201117_NOZ_article_text.txt'
+        NOZ = pd.read_csv(path_NOZ, sep='\t', index_col='articleId')
+        NOZ['publisher'] = 'NOZ'
+
+        NOZ['titel'] = NOZ["titel_html"]
+
+        NOZ = NOZ[NOZ.other_content == "no"]  # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
+        NOZ = NOZ.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
+        NOZ.rename('NOZ_{}'.format, inplace=True)
+        NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
+        df = NOZ
+
+    print("Shape of df:", df.shape)
+    return df
+
 
 def get_text(publisher, ID):
     if publisher in ['SZ', 'TV']:
@@ -78,7 +121,21 @@ def get_text(publisher, ID):
         text = text.replace('\n', ' ').strip()  # delete linebreaks
         text = re.sub(' +', ' ', text)  # just one space
         text = text.replace(u'\xa0', u' ')
+        text = text.replace(u'\xad', u'')
     return text
+
+
+def z_transform(column):
+    mean = np.mean(column)
+    std = np.std(column)
+    z_transformed = [ (value - mean)/std for value in column]
+    z_transformed = column.apply(lambda x: (x - mean) / std )
+
+    return z_transformed
+
+def percentile_transform(column):
+    percentile_transformed = column.apply(lambda x: percentileofscore(column, x))
+    return percentile_transformed
 
 
 def get_time_class(row, min, max):

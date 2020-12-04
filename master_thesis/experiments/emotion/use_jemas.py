@@ -24,7 +24,7 @@ print(text)
 #neutral = np.array([0.,5.,5.])
 
 # MEmoLon
-lex = utils.get_MEmoLon(max_length = 5000)
+lex = utils.get_MEmoLon(max_length = 10000)
 lex = lex.reset_index().dropna().set_index('word') # to delete nan in index...
 neutral = np.array([5.,5.,5.])
 
@@ -33,7 +33,7 @@ print(lex.shape)
 vars = lex.columns.to_list()
 print("vars", vars)
 
-#TODO: Hier überlegeb, welcher Preprocessor, muss das Lexikon auch da durch?
+#TODO: Hier überlegen, welcher Preprocessor, muss das Lexikon auch da durch?
 
 #preprocessor = jemas.German_Preprocessor() # for Vo-lexicon: lemmatization, lower casing, deletion of stopwords
 preprocessor = jemas.Minimal_Preprocessor('de') # for MEmoLon: deleting punct and stopwords, no lemmatization
@@ -59,8 +59,7 @@ analyzer = jemas.Analyzer(lex = lex,
                           preprocessor = preprocessor)
 
 df_full = utils.get_raw_df()
-df_full.set_index('articleId', inplace=True)
-df_full = df_full[['text_preprocessed']]
+#df_full.set_index('articleId', inplace=True)
 
 # new df with emotional variables as columns
 df = df_full.copy()
@@ -79,7 +78,7 @@ for i, ID in enumerate(IDs):
     #print(ID)
     #if i > 4:
     #    break
-    text = df.loc[ID, 'text_preprocessed']
+    text = df.loc[ID, 'article_text']
     rt = analyzer(text)
     #print(rt)
     #print(rt['tokens_total'])
@@ -98,6 +97,6 @@ for i, ID in enumerate(IDs):
 
 print(df.head())
 
-df.to_csv('jemas_MEmoLon_maxlen5000.tsv', sep='\t')
+df.to_csv('jemas_MEmoLon_maxlen10000.tsv', sep='\t')
 #df.to_csv('jemas_vo.tsv', sep='\t')
 #df.to_csv('jemas_MEmoLon.tsv', sep='\t')

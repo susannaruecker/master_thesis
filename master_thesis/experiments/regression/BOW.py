@@ -16,7 +16,7 @@ def train_BOW_model(df,
                     preprocessor = None,
                     feature_type = 'abs',
                     create_or_load = 'create',
-                    max_features = 1000,
+                    max_features = 500,
                     text_base = 'article_text',
                     target = 'avgTimeOnPage'
                     ):
@@ -129,22 +129,23 @@ def train_BOW_model(df,
     pickle.dump(model, open(target_path, 'wb'))
 
 
-# get data (already conditionend on min_pageviews etc)
+# get data
 df = utils.get_raw_df()
-df = df[df.nr_tokens_text >= 50]
-#df = df[df.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
-#df = df[df.zeilen >= 10]
+df = df[df.nr_tokens_text >= 100]
+df = df[df.nr_tokens_text < 30000]
+df = df[df.publisher == "NOZ"]
+df = df.sample(frac=0.3, replace=False, random_state=2) # take n % for faster processing # TODO: change back
+
 print("used df:", df.shape)
 
 # preprocessor
-preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=False)
+preprocessor = utils.Preprocessor(delete_stopwords=True, lemmatize=True, delete_punctuation=False)
 
 train_BOW_model(df = df,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 100, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                max_features = 500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
                 text_base = 'article_text', #'teaser', #'text_preprocessed',
                 target = 'avgTimeOnPage' #'stickiness' #avgTimeOnPage' #'avgTimeOnPagePerRow' # 'avgTimeOnPagePerWordcount'
                 )
@@ -165,3 +166,6 @@ train_BOW_model(df = df,
 # neuere Daten (mit NOZ dabei)
 # bei 100: r: 0.541, MSE: 9148.856, MAE: 57.0092
 # bei 500: r: 0.577, MSE: 9284.085, MAE: 54.655
+
+# nur innerhalb NOZ:
+#500 Pearson: 0.469, MSE: 19189.622, MAE: 69.543

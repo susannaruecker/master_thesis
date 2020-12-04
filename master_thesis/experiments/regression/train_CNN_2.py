@@ -12,12 +12,11 @@ from master_thesis.src import utils, data, models
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-# get data (already conditionend on min_pageviews etc)
 full = utils.get_raw_df()
 df = full
-#df = full[full.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
-#df = df[df.zeilen >= 10]
+df = df[df.publisher == "NOZ"]
+df = df.sample(frac=0.2, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
+print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
@@ -31,7 +30,7 @@ LR = 1e-4
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}"
+identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ_sample"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'

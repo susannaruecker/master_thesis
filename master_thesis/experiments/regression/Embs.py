@@ -3,14 +3,15 @@ from master_thesis.src import utils, data
 from sklearn.linear_model import Ridge
 import pickle
 import scipy.stats as st
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 import pandas as pd
 
 
 def train_Embs_model(df,
                      preprocessor,
                      embs,
-                     text_base = 'text_preprocessed',
-                     target = 'avgTimeOnPagePerNr_tokens'
+                     text_base = 'article_text',
+                     target = 'avgTimeOnPage'
                      ):
     # create splits
     df_train, df_dev, df_test = data.create_train_dev_test(df=df, random_seed=123)
@@ -48,8 +49,12 @@ def train_Embs_model(df,
     # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
     pred_dev[pred_dev < 0] = 0
 
-    # Pearson's r as evaluation metric
+    # Pearson's r and MSE as evaluation metric
+    print("text_base:", text_base)
+    print("target:", target)
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
+    print("MSE: ", mean_squared_error(pred_dev, y_dev))
+    print("MAE: ", mean_absolute_error(pred_dev, y_dev))
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / 'Embs.pkl'
@@ -66,17 +71,24 @@ preprocessor = utils.Preprocessor(lemmatize=False,
 #                                   embs = embs)
 
 
-# get data (already conditionend on min_pageviews etc)
-df = utils.get_conditioned_df()
-df = df[['text_preprocessed', 'avgTimeOnPagePerNr_tokens']] # to save space
+# get data
+df = utils.get_raw_df()
+df = df[df.nr_tokens_text >= 100]
+df = df[df.publisher == "NOZ"]
+df = df.sample(frac=1, replace=False, random_state=2) # take n % for faster processing # TODO: change back
 
 train_Embs_model(df = df,
                  preprocessor = preprocessor,
                  embs = embs,
-                 text_base = 'text_preprocessed',
-                 target = 'avgTimeOnPagePerNr_tokens')
+                 text_base = 'article_text',
+                 target = 'avgTimeOnPage')
 
 # (0.3800609554415717, 3.8111553582181078e-149) # ohne Lemmatisierung, mit Stopwortentfernung und mit Puncutation-Entfernung
 # (0.3424489259604992, 2.283629138045251e-36) lemmatize=False, delete_s = True, delete p = True
 # (0.373576696062199, 1.8096552504547748e-43) alles = False
 # (0.3424489259604992, 2.283629138045251e-36) bei lemma = False, delete_s = True, delete_p = True
+
+# NOZ (full)
+#Pearson: 0.3975
+#MSE: 20842.998
+#MAE: 71.10

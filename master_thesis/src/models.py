@@ -273,6 +273,7 @@ class baseline(nn.Module):
 
         return out
 
+
 class baseline_in_FFN_BERT(baseline):
     """
     Erbt von baseline (hat daher gleiche Layernamen und Parameter),
@@ -356,6 +357,38 @@ class FFN_BERTFeatures(nn.Module):
         #print(avg_last_hidden.size())
 
         out = self.baseline_in_FFNBERTFeatures(textlength = textlength, publisher=publisher, bert_output = avg_last_hidden)
+        return out
+
+class BERT_textlength(nn.Module):
+    """
+    pooled BERT output concatenated with textlength
+    """
+
+    def __init__(self, n_outputs):
+        super(BERT_textlength, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions = False,
+                                              output_hidden_states = True)
+
+        self.ffn = nn.Sequential(nn.Linear(769, 256),  #768 (Bert) + 1 (textlength)
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(256, 128),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(128, 64),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(64, n_outputs)
+                                 )
+
+    def forward(self, input_ids, attention_mask, textlength):
+        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
+
+        concatenated = torch.cat([hidden_state_cls, textlength], dim=1)
+        out = self.ffn(concatenated)
+
         return out
 
 

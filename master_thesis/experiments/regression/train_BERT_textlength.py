@@ -19,30 +19,35 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-model = models.FFN_BERTFeatures(n_outputs=1)
+model = models.BERT_textlength(n_outputs=1)
 tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 model.to(device)
 
 full = utils.get_raw_df()
 df = full
-df = df[df.publisher == "NOZ"]
-df = df.sample(frac=0.2, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
+df = df[df.publisher == "SZ"]
+df = df[df.nr_tokens_text >= 100]
+df = df[df.nr_tokens_text <= 3000]
+df = df[df.avgTimeOnPagePerWordcount <= 3]
+
+df = df.sample(frac=1, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 20
+EPOCHS = 10
 BATCH_SIZE = 8
-FIXED_LEN = 500 # random, could be specified (e.g. 400 or 512)
+FIXED_LEN = 400 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-3
+LR = 1e-5
+MASK_WORDS = False
 
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"FFNBERTFeatures_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ_sample"
+identifier = f"BERT_textlength_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -76,14 +81,9 @@ print(attention_mask.shape)
 
 
 # loss and optimizer
-optimizer = optim.AdamW(model.baseline_in_FFNBERTFeatures.parameters(), lr=LR) # only update FFN, NOT Bert
-
-
-#optimizer_only_bert = optim.AdamW(list(model.bert.parameters()) + list(model.fc_bert.parameters()), lr=LR)
-# optimizer wieder aufteilen? oder FFN gar nicht weitertrainieren
-# auch versuchen: mal baseline langsamer (wie Bert) trainieren
-# 5e-5
-
+# optimizer = optim.AdamW(model.parameters(), lr=LR)
+optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
+optimizer_ffn = optim.Adam(model.ffn.parameters(), lr=1e-3)
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -103,9 +103,8 @@ def evaluate_model(model):
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
             textlength = d["textlength"].to(device)
-            publisher = d["publisher"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -137,9 +136,15 @@ for epoch in range(EPOCHS):
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         textlength = d["textlength"].to(device)
-        publisher = d["publisher"].to(device)
         targets = d["target"].to(device)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength, publisher=publisher)
+        # print(targets.shape)
+        if MASK_WORDS == True: # masking some of the input ids (better way to do this?
+            indices = np.random.choice(np.arange(len(attention_mask.flatten())), replace=False,
+                                       size=int(len(attention_mask.flatten()) * 0.3))
+            flat = attention_mask.flatten()
+            flat[indices] = 0
+            attention_mask = flat.reshape(attention_mask.shape)
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -149,11 +154,13 @@ for epoch in range(EPOCHS):
         loss.backward()
 
         if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
-            optimizer.step()
-            optimizer.zero_grad()
+            #optimizer.step()
+            #optimizer.zero_grad()
 
-            #optimizer_only_bert.step()
-            #optimizer_only_bert.zero_grad()
+            optimizer_bert.step()
+            optimizer_ffn.step()
+            optimizer_bert.zero_grad()
+            optimizer_ffn.zero_grad()
 
         if batch_count % 100 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
@@ -161,7 +168,7 @@ for epoch in range(EPOCHS):
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 300 == 0: # every 300 batches: evaluate
+        if batch_count % 500 == 0: # every 300 batches: evaluate
             # EVALUATE
             eval_rt = evaluate_model(model = model)
             # log eval loss and pearson to tensorboard

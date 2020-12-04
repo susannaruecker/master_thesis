@@ -40,25 +40,24 @@ model.to(device)
 # get data (already conditionend on min_pageviews etc)
 #df = utils.get_conditioned_df()
 full = utils.get_raw_df()
-df = full
-#df = full[full.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
-#df = df[df.zeilen >= 10]
+full = full[full.nr_tokens_text >= 50]
+df = full[full.publisher == "NOZ"]
+df = df[['article_text', 'avgTimeOnPage', 'nr_tokens_publisher', 'publisher']]
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 5
+EPOCHS = 8
 BATCH_SIZE = 8
 FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
-LR = 1e-5 # war auch mal 1e-6
+LR = 0.00001 # normalerweise immer 1e5 # war auch mal 1e-6
 
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_SZ_TV"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_NOZ"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -116,7 +115,7 @@ def evaluate_model(model):
             attention_mask = d["attention_mask"].to(device)
             targets = d["target"].to(device)
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            # print(outputs[:10])
+            #print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
 
@@ -149,7 +148,7 @@ for epoch in range(EPOCHS):
         targets = d["target"].to(device)
         # print(targets.shape)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        #print(outputs[:10])
+        #print(outputs[:5])
         # print(outputs.shape)
 
         loss = loss_fn(outputs, targets)

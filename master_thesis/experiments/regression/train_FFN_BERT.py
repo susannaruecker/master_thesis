@@ -26,16 +26,15 @@ model.to(device)
 
 full = utils.get_raw_df()
 df = full
-#df = full[full.txtExists == True]
-#df = df[df.nr_tokens_publisher >= 70]
-#df = df[df.zeilen >= 10]
+df = df[df.publisher == "SZ"]
+df = df.sample(frac=0.2, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 5
+EPOCHS = 8
 BATCH_SIZE = 8
-FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
+FIXED_LEN = 500 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-5
@@ -43,7 +42,7 @@ LR = 1e-5
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"FFNBERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ_TV"
+identifier = f"FFNBERT_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ_sample"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
