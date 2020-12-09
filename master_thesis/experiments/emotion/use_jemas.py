@@ -12,21 +12,20 @@ import numpy as np
 import pandas as pd
 import re
 
-text = "Das hier sind Beispieltexte, bei denen die ganz doll super tollen Emotionen bestimmt werden sollen."
-print(text)
+text = "Das hier ist ein deutscher Beispieltext, bei dem die tollen Emotionen bestimmt werden. "
 
 # german emotion lexicon (VA), (Vo et al., 2009), neutral values = [0., 3.], scale valence = [-3,3], scale arousal, = [1,5]
-#lex = utils.get_Vo()
-#neutral = np.array([0.,3.])
+lex = utils.get_Vo()
+neutral = np.array([0.,3.])
 
 # german emotion lexicon (Schmidke et al., 2014), neutral values = [0., 5., 5.], scale valence [-3,3], scale arousal + dominance = [1,9]
 #lex = utils.get_ANGST()
 #neutral = np.array([0.,5.,5.])
 
 # MEmoLon
-lex = utils.get_MEmoLon(max_length = 10000)
-lex = lex.reset_index().dropna().set_index('word') # to delete nan in index...
-neutral = np.array([5.,5.,5.])
+#lex = utils.get_MEmoLon(max_length = 10000)
+#lex = lex.reset_index().dropna().set_index('word') # to delete nan in index...
+#neutral = np.array([5.,5.,5.])
 
 print(lex.head())
 print(lex.shape)
@@ -35,8 +34,8 @@ print("vars", vars)
 
 #TODO: Hier überlegen, welcher Preprocessor, muss das Lexikon auch da durch?
 
-#preprocessor = jemas.German_Preprocessor() # for Vo-lexicon: lemmatization, lower casing, deletion of stopwords
-preprocessor = jemas.Minimal_Preprocessor('de') # for MEmoLon: deleting punct and stopwords, no lemmatization
+preprocessor = jemas.German_Preprocessor() # for Vo-lexicon: lemmatization, lower casing, deletion of stopwords
+#preprocessor = jemas.Minimal_Preprocessor('de') # for MEmoLon: deleting punct and stopwords, no lemmatization
 
 print(preprocessor(text))
 
@@ -97,6 +96,6 @@ for i, ID in enumerate(IDs):
 
 print(df.head())
 
-df.to_csv('jemas_MEmoLon_maxlen10000.tsv', sep='\t')
-#df.to_csv('jemas_vo.tsv', sep='\t')
+#df.to_csv('jemas_MEmoLon_maxlen10000.tsv', sep='\t')
+df.to_csv('jemas_vo.tsv', sep='\t')
 #df.to_csv('jemas_MEmoLon.tsv', sep='\t')

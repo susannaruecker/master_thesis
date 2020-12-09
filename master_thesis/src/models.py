@@ -102,6 +102,32 @@ class Bert_averaging(nn.Module):
         return out
 
 
+class Bert_baseline(nn.Module):
+    def __init__(self, n_outputs):
+        super(Bert_baseline, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions=False,
+                                              output_hidden_states=True)
+        self.ffn = nn.Sequential(nn.Linear(768, 256),  # 768 (Bert)
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(256, 128),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(128, 64),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(64, n_outputs)
+                                 )
+
+    def forward(self, input_ids, attention_mask):
+        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
+
+        out = self.ffn(hidden_state_cls)
+
+        return out
+
 # not yet used, maybe something to try?
 #class DistilBert_sequence(Bert_sequence):
 #    """ uses everything from Bert_sequence, but uses DistilBert instead of Bert
@@ -267,6 +293,30 @@ class baseline(nn.Module):
         publisher = self.publisher_embs(publisher).squeeze()
         concatenated = torch.cat([publisher, textlength], dim=1)
         out_fc1 = self.dropout(self.LReLU(self.fc1(concatenated)))
+        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
+        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
+        out = self.out(out_fc3)
+
+        return out
+
+
+class baseline_textlength(nn.Module):
+    """An FFN with just textlength.
+    """
+
+    def __init__(self, n_outputs):
+        super(baseline_textlength, self).__init__()
+
+        self.LReLU = nn.LeakyReLU(0.01)
+        self.dropout = nn.Dropout(p=0.3)
+
+        self.fc1 = nn.Linear(1, 32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.out = nn.Linear(32, n_outputs)
+
+    def forward(self, textlength):
+        out_fc1 = self.dropout(self.LReLU(self.fc1(textlength)))
         out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
         out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
         out = self.out(out_fc3)

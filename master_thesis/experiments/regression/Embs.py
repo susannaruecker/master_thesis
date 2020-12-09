@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 from master_thesis.src import utils, data
 from sklearn.linear_model import Ridge
@@ -72,10 +74,16 @@ preprocessor = utils.Preprocessor(lemmatize=False,
 
 
 # get data
-df = utils.get_raw_df()
-df = df[df.nr_tokens_text >= 100]
+full = utils.get_raw_df()
+df = full
 df = df[df.publisher == "NOZ"]
-df = df.sample(frac=1, replace=False, random_state=2) # take n % for faster processing # TODO: change back
+df = df[df.nr_tokens_text >= 100]
+df = df[df.nr_tokens_text <= 3000]
+df = df[df.avgTimeOnPagePerWordcount <= 3]
+
+df = df.sample(frac=1, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
+print(df.head())
+print("size of used df:", df.shape)
 
 train_Embs_model(df = df,
                  preprocessor = preprocessor,
@@ -83,12 +91,8 @@ train_Embs_model(df = df,
                  text_base = 'article_text',
                  target = 'avgTimeOnPage')
 
-# (0.3800609554415717, 3.8111553582181078e-149) # ohne Lemmatisierung, mit Stopwortentfernung und mit Puncutation-Entfernung
-# (0.3424489259604992, 2.283629138045251e-36) lemmatize=False, delete_s = True, delete p = True
-# (0.373576696062199, 1.8096552504547748e-43) alles = False
-# (0.3424489259604992, 2.283629138045251e-36) bei lemma = False, delete_s = True, delete_p = True
-
-# NOZ (full)
-#Pearson: 0.3975
-#MSE: 20842.998
-#MAE: 71.10
+# NOZ
+#Feature shapes:  (28345, 300) (3543, 300) (3544, 300)
+#Pearson:  (0.4296870832032937, 3.5177741192007336e-159)
+#MSE:  14363.834765683527
+#MAE:  65.05144926248634

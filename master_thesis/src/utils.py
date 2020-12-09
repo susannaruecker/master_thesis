@@ -21,17 +21,17 @@ ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
 #DATA = ROOT / '200820_dataNLP' # alter Datensatz (noch ohne Spalte Ausreißer
 #DATA = ROOT / '200921_dataNLP' # neuer
 #DATA = ROOT / '201001_dataNLP' # neuer, mit Spalte 'prozentVerlag'
-DATA = ROOT / '201103_dataNLP' # neuer, mit Spalte 'text_crawling'
+#DATA = ROOT / '201103_dataNLP' # neuer, mit Spalte 'text_crawling'
 
 META = ROOT / 'Dokumentation_Daten.txt'
 
 PROJECT_ROOT = Path(__file__).parents[2].resolve()
 OUTPUT = PROJECT_ROOT / 'master_thesis' / 'outputs' # to save tsv files and other stuff
 
-def read_data(file): # for reading the individual publisher files
-    raw = pd.read_csv(DATA / file, engine='python', quoting=csv.QUOTE_ALL, escapechar = '\\', index_col = 'articleId')
-    #raw = pd.read_csv(DATA / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
-    return raw
+#def read_data(file): # for reading the individual publisher files
+#    raw = pd.read_csv(DATA / file, engine='python', quoting=csv.QUOTE_ALL, escapechar = '\\', index_col = 'articleId')
+#    #raw = pd.read_csv(DATA / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
+#    return raw
 
 def get_raw_df():
     #df = pd.read_csv(DATA / 'combined_textCrawling.tsv', sep='\t') # mit dem hier sind die bisherigen gelaufen
@@ -453,7 +453,7 @@ def get_averaged_vector(text, preprocessor, embs):
 
 
 # feature extraction for CNN: matrix with embedding of tokens, padded/trimmed to fixed_len if given
-def get_embedding_matrix(text, tokenizer, embs, fixed_length=None):
+def get_embedding_matrix(text, tokenizer, embs, start = 0, fixed_length=None, min_len = 200):
     if tokenizer is None: # use default (spacy) tokenizer
         nlp = spacy.load("de_core_news_sm", disable=['parser', 'ner'])
         tokenizer = nlp.Defaults.create_tokenizer(nlp)
@@ -462,17 +462,31 @@ def get_embedding_matrix(text, tokenizer, embs, fixed_length=None):
     else: # if another tokenizer is given
         tokens = tokenizer(text)
 
-    length = len(tokens)
+    original_len = len(tokens)
+    if fixed_length:
+        window_len = fixed_length
+    elif min_len:
+        window_len = np.random.randint(low=min_len, high=800)  # random window size between 200 and 800
+    else:
+        window_len = original_len
+
+        if window_len > original_len:  # just in case text is shorter
+            window_len = original_len  # take the original text length
+
+    if start is not None:
+        start = start
+    elif original_len == window_len:
+        start = 0
+    else:
+        start = np.random.randint(low=0, high=original_len - window_len)  # start shouldn't be too late
+    end = start + window_len
+
+    tokens = tokens[start:end]
 
     embs_dim = len(embs.get('und')) # take dummy entry to get dimensions of embs
-    if fixed_length:
-        matrix = np.zeros((fixed_length, embs_dim))
-    else:
-        matrix = np.zeros((length, embs_dim))
+    matrix = np.zeros((window_len, embs_dim))
 
     for i, t in enumerate(tokens):
-        if fixed_length and i >= fixed_length:
-            break
         if t in embs:
             vector = embs.get(t)
         else:

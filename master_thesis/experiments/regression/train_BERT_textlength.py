@@ -5,6 +5,8 @@ from torch import optim, nn
 from transformers import BertTokenizer
 import numpy as np
 import scipy.stats as st
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
 from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
@@ -26,7 +28,7 @@ model.to(device)
 
 full = utils.get_raw_df()
 df = full
-df = df[df.publisher == "SZ"]
+df = df[df.publisher == "NOZ"]
 df = df[df.nr_tokens_text >= 100]
 df = df[df.nr_tokens_text <= 3000]
 df = df[df.avgTimeOnPagePerWordcount <= 3]
@@ -36,18 +38,18 @@ print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 10
+EPOCHS = 15
 BATCH_SIZE = 8
 FIXED_LEN = 400 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
 LR = 1e-5
-MASK_WORDS = False
+MASK_WORDS = True
 
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"BERT_textlength_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ"
+identifier = f"BERT_textlength_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ_masked"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -115,6 +117,8 @@ def evaluate_model(model):
             true.extend(targets)
 
     return {'Pearson': st.pearsonr(pred, true)[0],
+            'MSE': mean_squared_error(pred, true),
+            'MAE': mean_absolute_error(pred, true),
             'eval_loss': np.mean(eval_losses)}
 
 
@@ -174,8 +178,13 @@ for epoch in range(EPOCHS):
             # log eval loss and pearson to tensorboard
             print("Mean eval loss:", eval_rt['eval_loss'])
             print("Pearson's r on dev set:", eval_rt['Pearson'])
+            print("MSE on dev set:", eval_rt['MSE'])
+            print("MAE on dev set:", eval_rt['MAE'])
             writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
             writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
+            writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
+            writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
+
             model = model.train() # make sure it is back to train mode
 
     print("Mean train loss epoch:", np.mean(train_losses))

@@ -5,6 +5,8 @@ from torch import optim, nn
 from transformers import BertTokenizer, DistilBertTokenizer
 import numpy as np
 import scipy.stats as st
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
 from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
@@ -19,7 +21,7 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERT' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
+MODEL = 'BERT_baseline' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
 
 if MODEL == 'BERT':
     model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
@@ -30,6 +32,9 @@ elif MODEL == 'BERTModel':
 elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
     model = models.Bert_averaging(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+elif MODEL == 'BERT_baseline':
+    model = models.Bert_baseline(n_outputs=1)
+    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 #if MODEL == 'DistilBERT':
 #    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
@@ -38,18 +43,19 @@ elif MODEL == 'BERTAvg':                            # this uses averaged last hi
 model.to(device)
 
 # get data (already conditionend on min_pageviews etc)
-#df = utils.get_conditioned_df()
 full = utils.get_raw_df()
-full = full[full.nr_tokens_text >= 50]
-df = full[full.publisher == "NOZ"]
-df = df[['article_text', 'avgTimeOnPage', 'nr_tokens_publisher', 'publisher']]
+df = full
+df = df[df.publisher == "NOZ"]
+df = df[df.nr_tokens_text >= 100]
+df = df[df.nr_tokens_text <= 3000]
+df = df[df.avgTimeOnPagePerWordcount <= 3]
 print(df.head())
 print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
-EPOCHS = 8
+EPOCHS = 10
 BATCH_SIZE = 8
-FIXED_LEN = 300 # random, could be specified (e.g. 400 or 512)
+FIXED_LEN = 400 # random, could be specified (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
 LR = 0.00001 # normalerweise immer 1e5 # war auch mal 1e-6
@@ -125,6 +131,8 @@ def evaluate_model(model):
             true.extend(targets)
 
     return {'Pearson': st.pearsonr(pred, true)[0],
+            'MSE': mean_squared_error(pred, true),
+            'MAE': mean_absolute_error(pred, true),
             'eval_loss': np.mean(eval_losses)}
 
 
@@ -166,14 +174,18 @@ for epoch in range(EPOCHS):
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 300 == 0: # every 300 batches: evaluate
+        if batch_count % 500 == 0: # every 300 batches: evaluate
             # EVALUATE
             eval_rt = evaluate_model(model = model)
             # log eval loss and pearson to tensorboard
             print("Mean eval loss:", eval_rt['eval_loss'])
             print("Pearson's r on dev set:", eval_rt['Pearson'])
+            print("MSE on dev set:", eval_rt['MSE'])
+            print("MAE on dev set:", eval_rt['MAE'])
             writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
             writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
+            writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
+            writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
             model = model.train() # make sure it is back to train mode
 
     print("Mean train loss epoch:", np.mean(train_losses))

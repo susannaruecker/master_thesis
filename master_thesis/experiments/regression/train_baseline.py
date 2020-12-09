@@ -4,6 +4,7 @@ import torch
 from torch import optim, nn
 import numpy as np
 import scipy.stats as st
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from torch.utils.tensorboard import SummaryWriter
 
 from master_thesis.src import utils, data, models
@@ -15,13 +16,17 @@ logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
+#model = models.baseline(n_outputs=1)
+model = models.baseline_textlength(n_outputs=1)
 
-model = models.baseline(n_outputs=1)
 model.to(device)
 
 full = utils.get_raw_df()
 df = full
-df = df[df.publisher == "SZ"]
+df = df[df.publisher == "NOZ"]
+df = df[df.nr_tokens_text >= 100]
+df = df[df.nr_tokens_text <= 3000]
+df = df[df.avgTimeOnPagePerWordcount <= 3]
 print(df.head())
 print("size of used df:", df.shape)
 
@@ -33,7 +38,7 @@ LR = 1e-3 # 1e-3
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"baseline_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_SZ"
+identifier = f"baseline_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -78,9 +83,9 @@ def evaluate_model(model):
         for nr, d in enumerate(dl_dev):
             print("-Batch", nr, end='\r')
             textlength = d["textlength"].to(device)
-            publisher = d["publisher"].to(device)
+            #publisher = d["publisher"].to(device)
             targets = d["target"].to(device)
-            outputs = model(textlength=textlength, publisher=publisher)
+            outputs = model(textlength=textlength)#, publisher=publisher)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -91,6 +96,8 @@ def evaluate_model(model):
             true.extend(targets)
 
     return {'Pearson': st.pearsonr(pred, true)[0],
+            'MSE': mean_squared_error(pred, true),
+            'MAE': mean_absolute_error(pred, true),
             'eval_loss': np.mean(eval_losses)}
 
 
@@ -110,10 +117,10 @@ for epoch in range(EPOCHS):
         batch_count += 1
 
         textlength = d["textlength"].to(device)
-        publisher = d["publisher"].to(device)
+        #publisher = d["publisher"].to(device)
         targets = d["target"].to(device)
         # print(targets.shape)
-        outputs = model(textlength=textlength, publisher=publisher)
+        outputs = model(textlength=textlength)#, publisher=publisher)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -132,14 +139,18 @@ for epoch in range(EPOCHS):
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 100 == 0: # every 300 batches: evaluate
+        if batch_count % 300 == 0: # every 300 batches: evaluate
             # EVALUATE
             eval_rt = evaluate_model(model = model)
             # log eval loss and pearson to tensorboard
             print("Mean eval loss:", eval_rt['eval_loss'])
             print("Pearson's r on dev set:", eval_rt['Pearson'])
+            print("MSE on dev set:", eval_rt['MSE'])
+            print("MAE on dev set:", eval_rt['MAE'])
             writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
             writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
+            writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
+            writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
             model = model.train() # make sure it is back to train mode
 
     print("Mean train loss epoch:", np.mean(train_losses))
