@@ -2,6 +2,7 @@
 
 import torch
 from torch import optim, nn
+from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
 import scipy.stats as st
@@ -13,25 +14,19 @@ from master_thesis.src import utils, data, models
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-full = utils.get_raw_df()
-df = full
-df = df[df.publisher == "NOZ"]
-df = df[df.nr_tokens_text >= 100]
-df = df[df.nr_tokens_text <= 3000]
-df = df[df.avgTimeOnPagePerWordcount <= 3]
-
 # HYPERPARAMETERS
-EPOCHS = 15
+EPOCHS = 5
 BATCH_SIZE = 8
-FIXED_LEN = 500
+FIXED_LEN = 400 #500
 MIN_LEN = None #500
 START = 0 # None
 LR = 1e-4
+FRACTION = 0.5 # #1 #TODO: change back to 1
 
 TARGET = 'avgTimeOnPage'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ"
+identifier = f"CNN_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_NOZ_test"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -44,20 +39,19 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 embs = utils.load_fasttext_vectors(limit = None)
 EMBS_DIM = 300
 
-# building train-dev-test split, their DataSets and DataLoaders
+# DataSets and DataLoaders
 
-window = data.RandomWindow_CNN(start = START, fixed_len = FIXED_LEN, min_len = MIN_LEN)
-collater = data.Collater_CNN()
+transform = data.TransformCNN(tokenizer = None, embs = embs, start = START, fixed_len = FIXED_LEN, min_len = MIN_LEN)
+collater = data.CollaterCNN()
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_CNN(df = df,
-                                                        target = TARGET,
-                                                        text_base = 'article_text',
-                                                        tokenizer = None, # uses default (spacy) tokenizer
-                                                        embs = embs,
-                                                        train_batch_size = BATCH_SIZE,
-                                                        val_batch_size= BATCH_SIZE,
-                                                        transform = window,
-                                                        collater = collater)
+ds_train = data.PublisherDataset(publisher="NOZ", set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_dev = data.PublisherDataset(publisher="NOZ", set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_test = data.PublisherDataset(publisher="NOZ", set = "test", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
+
+dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
@@ -67,22 +61,21 @@ print(input_matrix.shape)
 #print(data['target'])
 print(data['target'].shape)
 
-#model = models.CNN(num_outputs = 1,
-#                   embs_dim = EMBS_DIM,
-#                   filter_sizes=[3, 4, 5],
-#                   num_filters=[100,100,100]
-#                   )
+model = models.CNN(num_outputs = 1,
+                   embs_dim = EMBS_DIM,
+                   filter_sizes=[3, 4, 5],
+                   num_filters=[100,100,100]
+                   )
 
-model = models.CNN_small(num_outputs=1,
-                         embs_dim=EMBS_DIM,
-                         filter_sizes=[3, 4, 5],
-                         num_filters=[50,50,50]) # try a smaller model
+#model = models.CNN_small(num_outputs=1,
+#                         embs_dim=EMBS_DIM,
+#                         filter_sizes=[3, 4, 5],
+#                         num_filters=[50,50,50]) # try a smaller model
 
 model.to(device)
 
 # loss and optimizer
 optimizer = optim.AdamW(model.parameters(), lr=LR) # vorher 1e-3 Adam? (lr=1e-5 ist jedenfalls nicht gut!)
-#optimizer = optim.Adadelta(model.parameters(), lr=LR, rho=0.95) # den hier hier nutzt das Tutorial vom CNN, war aber bei mir schlecht
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -101,7 +94,7 @@ def evaluate_model(model):
             print("-Batch", nr, end='\r')
             input_matrix = d["input_matrix"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_matrix)
+            outputs = model(input_matrix = input_matrix)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
@@ -134,7 +127,7 @@ for epoch in range(EPOCHS):
 
         input_matrix = d["input_matrix"].to(device)
         targets = d["target"].to(device)
-        outputs = model(input_matrix)
+        outputs = model(input_matrix=input_matrix)
         #print(outputs[:10])
         # print(outputs.shape)
 
@@ -180,5 +173,3 @@ print("START: ", START)
 print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("LR: ", LR)
-
-print(df.shape)

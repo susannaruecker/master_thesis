@@ -161,21 +161,28 @@ class CNN(nn.Module):
                                            for i in range(len(self.filter_sizes))
                                          ])
         # Fully-connected layer and Dropout
-        self.fc = nn.Linear(np.sum(self.num_filters), self.num_outputs)
+        self.fc = nn.Linear(np.sum(self.num_filters), 128)
+        self.out = nn.Linear(128, self.num_outputs)
         self.drop = nn.Dropout(p=0.5)
         self.drop_embs = nn.Dropout(p=0.2)
+        self.LReLU = nn.LeakyReLU(0.01)
 
-    def forward(self, x):
 
+    def forward(self, input_matrix):
         # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
-        x_embed = self.drop_embs(x)
+        x_embed = self.drop_embs(input_matrix)
+        #print("x_embed", x_embed.size())
 
         # Permute `x_embed` to match input shape requirement of `nn.Conv1d`.
         # Output shape: (b, embed_dim, max_len)
         x_reshaped = x_embed.permute(0, 2, 1)
+        #print("x_reshaped", x_reshaped.size())
 
         # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
+        #print("x_conv_list_0", x_conv_list[0].size())
+        #print("x_conv_list_1", x_conv_list[1].size())
+        #print("x_conv_list_2", x_conv_list[2].size())
 
         ## Max pooling. Output shape: (b, num_filters[i], 1)
         #x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
@@ -188,51 +195,122 @@ class CNN(nn.Module):
         # Concatenate x_pool_list to feed the fully connected layer.
         # Output shape: (b, sum(num_filters))
         x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
+        #print("x_fc", x_fc.size())
 
         # Output shape: (b, n_classes)
-        out = self.fc(self.drop(x_fc))
+        x_fc2 = self.drop(self.LReLU(self.fc(x_fc)))
+        #print("x_fc2", x_fc2.size())
+        out = self.out(x_fc2)
+        #print("out", out.size())
 
         return out
 
 
-# basically the same as above but smaller and with an intermediate linear layer
-class CNN_small(nn.Module):
+# (fast) identisch nachgebaut wie hier https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
+class CNN_textlength(nn.Module):
     def __init__(self, num_outputs,
                        embs_dim = 300,
                        filter_sizes=[3, 4, 5],
-                       num_filters=[20,20,20]
+                       num_filters=[100,100,100]
                  ):
-        super(CNN_small, self).__init__()
+        super(CNN_textlength, self).__init__()
         self.embs_dim = embs_dim
         self.num_outputs = num_outputs
         self.filter_sizes = filter_sizes
         self.num_filters = num_filters
 
+        # Convolutional Filters
         self.conv1d_list = nn.ModuleList([ nn.Conv1d(in_channels=self.embs_dim,
                                                      out_channels=self.num_filters[i],
                                                      kernel_size=self.filter_sizes[i])
                                            for i in range(len(self.filter_sizes))
                                          ])
-
-        self.fc = nn.Linear(np.sum(self.num_filters), 32)
-        self.out = nn.Linear(32, self.num_outputs)
-        self.drop = nn.Dropout(p=0.4) # hier war sonst IMMER 0.5, mal kleiner ausprobiert
+        # Fully-connected layer and Dropout
+        self.fc = nn.Linear(np.sum(self.num_filters), 128)
+        self.out = nn.Linear(129, self.num_outputs) # before this: concatenate textlength
+        self.drop = nn.Dropout(p=0.5)
         self.drop_embs = nn.Dropout(p=0.2)
+        self.LReLU = nn.LeakyReLU(0.01)
 
-    def forward(self, x):
-        x_embed = self.drop_embs(x)
+
+    def forward(self, input_matrix, textlength):
+        # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
+        x_embed = self.drop_embs(input_matrix)
+        #print("x_embed", x_embed.size())
+
+        # Permute `x_embed` to match input shape requirement of `nn.Conv1d`.
+        # Output shape: (b, embed_dim, max_len)
         x_reshaped = x_embed.permute(0, 2, 1)
+        #print("x_reshaped", x_reshaped.size())
 
+        # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
+        #print("x_conv_list_0", x_conv_list[0].size())
+        #print("x_conv_list_1", x_conv_list[1].size())
+        #print("x_conv_list_2", x_conv_list[2].size())
 
+        ## Max pooling. Output shape: (b, num_filters[i], 1)
+        #x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
+        #               for x_conv in x_conv_list]
+
+        # Average pooling. Output shape: (b, num_filters[i], 1)
         x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
                        for x_conv in x_conv_list]
 
+        # Concatenate x_pool_list to feed the fully connected layer.
+        # Output shape: (b, sum(num_filters))
         x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
+        #print("x_fc", x_fc.size())
 
-        inter = self.fc(self.drop(x_fc))
-        out = self.out(self.drop(inter))
+        # Output shape: (b, n_classes)
+        x_fc2 = self.drop(self.LReLU(self.fc(x_fc)))
+        #print("x_fc2", x_fc2.size())
+        concatenated = torch.cat([x_fc2, textlength], dim=1)
+
+        out = self.out(concatenated)
+        #print("out", out.size())
+
         return out
+
+
+# # basically the same as above but smaller and with an intermediate linear layer
+# class CNN_small(nn.Module):
+#     def __init__(self, num_outputs,
+#                        embs_dim = 300,
+#                        filter_sizes=[3, 4, 5],
+#                        num_filters=[20,20,20]
+#                  ):
+#         super(CNN_small, self).__init__()
+#         self.embs_dim = embs_dim
+#         self.num_outputs = num_outputs
+#         self.filter_sizes = filter_sizes
+#         self.num_filters = num_filters
+#
+#         self.conv1d_list = nn.ModuleList([ nn.Conv1d(in_channels=self.embs_dim,
+#                                                      out_channels=self.num_filters[i],
+#                                                      kernel_size=self.filter_sizes[i])
+#                                            for i in range(len(self.filter_sizes))
+#                                          ])
+#
+#         self.fc = nn.Linear(np.sum(self.num_filters), 32)
+#         self.out = nn.Linear(32, self.num_outputs)
+#         self.drop = nn.Dropout(p=0.4) # hier war sonst IMMER 0.5, mal kleiner ausprobiert
+#         self.drop_embs = nn.Dropout(p=0.2)
+#
+#     def forward(self, x):
+#         x_embed = self.drop_embs(x)
+#         x_reshaped = x_embed.permute(0, 2, 1)
+#
+#         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
+#
+#         x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
+#                        for x_conv in x_conv_list]
+#
+#         x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
+#
+#         inter = self.fc(self.drop(x_fc))
+#         out = self.out(self.drop(inter))
+#         return out
 
 
 

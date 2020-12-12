@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 import numpy as np
 from master_thesis.src import utils
@@ -24,7 +24,7 @@ def create_train_dev_test(df, random_seed=123):
 
 class PublisherDataset(Dataset):
 
-    def __init__(self, publisher = "NOZ", set = "train", target = "avgTimeOnPage", text_base = "article_text", transform=None):
+    def __init__(self, publisher = "NOZ", set = "train", fraction = 1, target = "avgTimeOnPage", text_base = "article_text", transform=None):
 
         self.df = utils.get_publisher_df(publisher)
         with open(utils.OUTPUT / "splits" / f"{publisher}_splits.json", "r") as f:
@@ -32,6 +32,7 @@ class PublisherDataset(Dataset):
             set_IDs = splits[set]
 
         self.df = self.df.loc[set_IDs]
+        self.df = self.df.sample(frac=fraction, replace=False, random_state=1) # possible for faster trials
         self.set = set
         self.text_base = text_base
         self.target = target
@@ -239,6 +240,7 @@ class CollaterCNN():
 #####
 #####
 ##### OLDER AND (hopefully) DEPRECATED
+#####
 #####
 
 # class INWT_Dataset_BERT(Dataset):

@@ -2,7 +2,8 @@
 
 import torch
 from torch import optim, nn
-from transformers import BertTokenizer, DistilBertTokenizer
+from transformers import BertTokenizer
+from torch.utils.data import DataLoader
 import numpy as np
 import scipy.stats as st
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -36,29 +37,16 @@ elif MODEL == 'BERT_baseline':
     model = models.Bert_baseline(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
-#if MODEL == 'DistilBERT':
-#    model = models.DistilBert_sequence(n_outputs=1)     # this ist DistilBert's Sequence Classification
-#    tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-german-cased')
-
 model.to(device)
-
-# get data (already conditionend on min_pageviews etc)
-full = utils.get_raw_df()
-df = full
-df = df[df.publisher == "NOZ"]
-df = df[df.nr_tokens_text >= 100]
-df = df[df.nr_tokens_text <= 3000]
-df = df[df.avgTimeOnPagePerWordcount <= 3]
-print(df.head())
-print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
 EPOCHS = 10
 BATCH_SIZE = 8
-FIXED_LEN = 400 # random, could be specified (e.g. 400 or 512)
+FIXED_LEN = 400 # (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
 LR = 0.00001 # normalerweise immer 1e5 # war auch mal 1e-6
+FRACTION = 1
 
 TARGET = 'avgTimeOnPage'
 
@@ -73,19 +61,20 @@ print(f"logging with Tensorboard to path {tensorboard_path}")
 # for saving model after each epoch
 model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
-# building train-dev-test split, their DataSets and DataLoaders
+# DataSets and DataLoaders
 
-window = data.RandomWindow_BERT(start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
-collater = data.Collater_BERT()
+transform = data.TransformBERT(tokenizer = tokenizer, start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
+collater = data.CollaterBERT()
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_BERT(df=df,
-                                                         target = TARGET, #'avgTimeOnPagePerWordcount', #stickiness
-                                                         text_base = 'article_text',
-                                                         tokenizer = tokenizer,
-                                                         train_batch_size = BATCH_SIZE,
-                                                         val_batch_size= BATCH_SIZE,
-                                                         transform = window,
-                                                         collater = collater)
+ds_train = data.PublisherDataset(publisher="NOZ", set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_dev = data.PublisherDataset(publisher="NOZ", set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_test = data.PublisherDataset(publisher="NOZ", set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
+print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
+
+dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
@@ -202,4 +191,3 @@ print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("LR: ", LR)
 
-print(df.shape)

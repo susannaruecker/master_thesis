@@ -133,6 +133,7 @@ def z_transform(column):
 
     return z_transformed
 
+
 def percentile_transform(column):
     percentile_transformed = column.apply(lambda x: percentileofscore(column, x))
     return percentile_transformed
@@ -145,56 +146,56 @@ def get_time_class(row, min, max):
     else:
         return 0
 
-def get_conditioned_df(min_diff_pageviews_exits = 50,
-                       min_wordcount = 1,
-                       max_wordcount = 1000000000, # dummy
-                       min_zeilen = 10,
-                       max_zeilen = 100,
-                       min_avgTimeOnPagePerWordcount = 0.05,
-                       max_avgTimeOnPagePerWordcount = 5,
-                       min_avgTimeOnPage = 2,  # min 2 seconds
-                       max_avgTimeOnPage = 1200, # max 20 minutes
-                       min_prozentDpa = 50,
-                       min_prozentVerlag = 50,
-                       delete_outliers = True,
-                       delete_zeilen_mismatch = True, # delete articles where match of zeilen and wordcount ist far off
-                       add_time_class = True, # adds a binary time_class label
-                       ):
-
-
-    # get raw data
-    df = get_raw_df()
-
-    # conditioning on columns and their values
-
-    df = df.loc[(df['pageviews-exits'] >= min_diff_pageviews_exits) &
-                (df['wordcount'] >= min_wordcount) &  # to delete articles without text or erroneous data
-                (df['wordcount'] <= max_wordcount) &
-                (df['zeilen'] >= min_zeilen) &
-                (df['zeilen'] <= max_zeilen) &
-                (df['avgTimeOnPage'] >= min_avgTimeOnPage) &
-                (df['avgTimeOnPage'] <= max_avgTimeOnPage) &
-                (df['avgTimeOnPagePerWordcount'] >= min_avgTimeOnPagePerWordcount) &
-                (df['avgTimeOnPagePerWordcount'] <= max_avgTimeOnPagePerWordcount) &
-                (df['prozentDpa'] >= min_prozentDpa) &
-                (df['prozentVerlag'] >= min_prozentVerlag)
-                ]
-    if delete_outliers == True:
-        df = df.loc[(df['ausreisser'] == 'nein')]
-
-    df = df[df.zeilen > 0]
-    df['wordsPerRow'] = df.wordcount / df.zeilen
-
-    if delete_zeilen_mismatch == True:
-        avg = np.mean(df.wordsPerRow)
-        std = np.std(df.wordsPerRow)
-        df = df[(df.wordsPerRow >= avg-(2*std)) & (df.wordsPerRow <= avg+(2*std))]
-
-    if add_time_class == True:
-        df['time_class'] = df.apply(lambda row: get_time_class(row=row, min=0.4, max=6), axis=1) # 100, 250
-
-    print("Shape of remaining df after conditioning:", df.shape)
-    return df
+# def get_conditioned_df(min_diff_pageviews_exits = 50,
+#                        min_wordcount = 1,
+#                        max_wordcount = 1000000000, # dummy
+#                        min_zeilen = 10,
+#                        max_zeilen = 100,
+#                        min_avgTimeOnPagePerWordcount = 0.05,
+#                        max_avgTimeOnPagePerWordcount = 5,
+#                        min_avgTimeOnPage = 2,  # min 2 seconds
+#                        max_avgTimeOnPage = 1200, # max 20 minutes
+#                        min_prozentDpa = 50,
+#                        min_prozentVerlag = 50,
+#                        delete_outliers = True,
+#                        delete_zeilen_mismatch = True, # delete articles where match of zeilen and wordcount ist far off
+#                        add_time_class = True, # adds a binary time_class label
+#                        ):
+#
+#
+#     # get raw data
+#     df = get_raw_df()
+#
+#     # conditioning on columns and their values
+#
+#     df = df.loc[(df['pageviews-exits'] >= min_diff_pageviews_exits) &
+#                 (df['wordcount'] >= min_wordcount) &  # to delete articles without text or erroneous data
+#                 (df['wordcount'] <= max_wordcount) &
+#                 (df['zeilen'] >= min_zeilen) &
+#                 (df['zeilen'] <= max_zeilen) &
+#                 (df['avgTimeOnPage'] >= min_avgTimeOnPage) &
+#                 (df['avgTimeOnPage'] <= max_avgTimeOnPage) &
+#                 (df['avgTimeOnPagePerWordcount'] >= min_avgTimeOnPagePerWordcount) &
+#                 (df['avgTimeOnPagePerWordcount'] <= max_avgTimeOnPagePerWordcount) &
+#                 (df['prozentDpa'] >= min_prozentDpa) &
+#                 (df['prozentVerlag'] >= min_prozentVerlag)
+#                 ]
+#     if delete_outliers == True:
+#         df = df.loc[(df['ausreisser'] == 'nein')]
+#
+#     df = df[df.zeilen > 0]
+#     df['wordsPerRow'] = df.wordcount / df.zeilen
+#
+#     if delete_zeilen_mismatch == True:
+#         avg = np.mean(df.wordsPerRow)
+#         std = np.std(df.wordsPerRow)
+#         df = df[(df.wordsPerRow >= avg-(2*std)) & (df.wordsPerRow <= avg+(2*std))]
+#
+#     if add_time_class == True:
+#         df['time_class'] = df.apply(lambda row: get_time_class(row=row, min=0.4, max=6), axis=1) # 100, 250
+#
+#     print("Shape of remaining df after conditioning:", df.shape)
+#     return df
 
 
 def create_meta_dict():

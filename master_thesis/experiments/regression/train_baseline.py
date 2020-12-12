@@ -2,6 +2,7 @@
 
 import torch
 from torch import optim, nn
+from torch.utils.data import DataLoader
 import numpy as np
 import scipy.stats as st
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -16,24 +17,14 @@ logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-#model = models.baseline(n_outputs=1)
 model = models.baseline_textlength(n_outputs=1)
-
 model.to(device)
-
-full = utils.get_raw_df()
-df = full
-df = df[df.publisher == "NOZ"]
-df = df[df.nr_tokens_text >= 100]
-df = df[df.nr_tokens_text <= 3000]
-df = df[df.avgTimeOnPagePerWordcount <= 3]
-print(df.head())
-print("size of used df:", df.shape)
 
 # HYPERPARAMETERS
 EPOCHS = 100
 BATCH_SIZE = 10
 LR = 1e-3 # 1e-3
+FRACTION = 1
 
 TARGET = 'avgTimeOnPage'
 
@@ -48,15 +39,16 @@ print(f"logging with Tensorboard to path {tensorboard_path}")
 # for saving model after each epoch
 model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
-# building train-dev-test split, their DataSets and DataLoaders
+# DataSets and DataLoaders
 
-dl_train, dl_dev, dl_test = data.create_DataLoaders_baseline(df=df,
-                                                         target = TARGET,
-                                                         text_base = 'article_text', #'textPublisher_preprocessed',
-                                                         train_batch_size = BATCH_SIZE,
-                                                         val_batch_size= BATCH_SIZE,
-                                                         transform = None,
-                                                         collater = None)
+ds_train = data.PublisherDataset(publisher="NOZ", set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = None)
+ds_dev = data.PublisherDataset(publisher="NOZ", set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = None)
+ds_test = data.PublisherDataset(publisher="NOZ", set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = None)
+print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
+
+dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=None)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=None)
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=None)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
@@ -164,4 +156,4 @@ print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("LR: ", LR)
 
-print(df.shape)
+
