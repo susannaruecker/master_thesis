@@ -8,6 +8,7 @@ import re
 import csv
 from pathlib import Path
 import spacy
+from spacy_langdetect import LanguageDetector
 import wget
 import gzip
 import os
@@ -40,23 +41,35 @@ def get_raw_df():
     path_SZ = ROOT / '201112_dataNLP_SZ_TV/201112_SZ_article_text.txt'
     path_TV = ROOT / '201112_dataNLP_SZ_TV/201112_TV_article_text.txt'
     path_NOZ = ROOT / '201117_dataNLP_NOZ/201117_NOZ_article_text.txt'
+    path_bonn = ROOT / '201211_dataNLP_bonn/201211_bonn_article_text.txt'
+
 
     SZ = pd.read_csv(path_SZ, sep='\t', index_col = 'articleId')
     TV = pd.read_csv(path_TV, sep='\t', index_col = 'articleId')
     NOZ = pd.read_csv(path_NOZ, sep='\t', index_col='articleId')
+    bonn = pd.read_csv(path_bonn, sep='\t', index_col='articleId')
+
 
     SZ['publisher'] = 'SZ'
     TV['publisher'] = 'TV'
     NOZ['publisher'] = 'NOZ'
+    bonn['publisher'] = 'bonn'
+
 
     NOZ['titel'] = NOZ["titel_html"]
-
     NOZ = NOZ[NOZ.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
     NOZ = NOZ.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
+
+    bonn['titel'] = bonn["titel_html"]
+    bonn = bonn[bonn.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
+    bonn = bonn.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
+
 
     SZ.rename('SZ_{}'.format, inplace=True)
     TV.rename('TV_{}'.format, inplace=True)
     NOZ.rename('NOZ_{}'.format, inplace=True)
+    bonn.rename('bonn_{}'.format, inplace=True)
+
 
     #print(SZ.head())
     #print(TV.head())
@@ -65,15 +78,19 @@ def get_raw_df():
     SZ['nr_tokens_publisher'] = SZ["nr_tokens_text"] # das ist nur temporär, weil so gerade in data.py die Textlänge heißt...
     TV['nr_tokens_publisher'] = TV["nr_tokens_text"]
     NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
+    bonn['nr_tokens_publisher'] = bonn["nr_tokens_text"]
 
 
-    columns = set(SZ.columns).intersection(TV.columns).intersection(NOZ.columns)
+    columns = set(SZ.columns).intersection(TV.columns).intersection(NOZ.columns).intersection(bonn.columns)
     print("Shared columns:", columns)
 
-    df = pd.concat([SZ[columns], TV[columns], NOZ[columns]])
+    df = pd.concat([SZ[columns], TV[columns], NOZ[columns], bonn[columns]])
+    df = df[df.language == "de"] # drop english (or empty) articles
+
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
     return df
+
 
 def get_publisher_df(publ):
     # die hier sind die neuen (mit meinen Texten)
@@ -106,6 +123,21 @@ def get_publisher_df(publ):
         NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
         df = NOZ
 
+    if publ == "bonn":
+        path_bonn = ROOT / '201211_dataNLP_bonn/201211_bonn_article_text.txt'
+        bonn = pd.read_csv(path_bonn, sep='\t', index_col='articleId')
+        bonn['publisher'] = 'bonn'
+
+        bonn['titel'] = bonn["titel_html"]
+
+        bonn = bonn[bonn.other_content == "no"]  # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
+        bonn = bonn.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
+        bonn.rename('bonn_{}'.format, inplace=True)
+        bonn['nr_tokens_publisher'] = bonn["nr_tokens_text"]
+        df = bonn
+
+    df = df[df.language == "de"] # drop english (or empty, there language == "UNKNOWN") articles
+
     print("Shape of df:", df.shape)
     return df
 
@@ -113,8 +145,13 @@ def get_publisher_df(publ):
 def get_text(publisher, ID):
     if publisher in ['SZ', 'TV']:
         folder = ROOT / '201112_dataNLP_SZ_TV' / publisher / 'txt'
-    if publisher == 'NOZ':
+    elif publisher == 'NOZ':
         folder = ROOT / '201117_dataNLP_NOZ' / publisher / 'txt'
+    elif publisher == 'bonn':
+        folder = ROOT / '201211_dataNLP_bonn' / publisher / 'txt'
+    else:
+        print("no folder found!")
+        folder = ""
 
     with open(folder / f"ID_{ID}.txt", "r") as f:
         text = f.read()
@@ -124,6 +161,21 @@ def get_text(publisher, ID):
         text = text.replace(u'\xad', u'')
     return text
 
+
+def detect_language(article_list):
+    nlp = spacy.load("en_core_web_sm")
+    nlp.add_pipe(LanguageDetector(), name="language_detector", last=True)
+    article_languages = []
+    for nr, a in enumerate(article_list):
+        print("at nr:", nr, end='\r')
+        doc = nlp(a)
+        # document level language detection. Think of it like average language of document!
+        lang = doc._.language['language'] # ['score' would give confindence score]
+        article_languages.append(lang)
+        # sentence level language detection
+        # for i, sent in enumerate(doc.sents):
+        #    print(sent, sent._.language)
+    return article_languages
 
 def z_transform(column):
     mean = np.mean(column)

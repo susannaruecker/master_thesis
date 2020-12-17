@@ -63,8 +63,9 @@ class PublisherDataset(Dataset):
 
 
 class TransformBERT(object):
-    def __init__(self, tokenizer, start=None, fixed_len=None, min_len = 200):
+    def __init__(self, tokenizer, keep_all= False, start=None, fixed_len=None, min_len = 200):
         self.fixed_len = fixed_len
+        self.keep_all = keep_all
         self.start = start
         self.min_len = min_len
         self.tokenizer = tokenizer
@@ -88,8 +89,10 @@ class TransformBERT(object):
         #print("original len:", original_len)
         if self.fixed_len:
             window_len = self.fixed_len
-        else:
+        elif self.min_len:
             window_len = np.random.randint(low=self.min_len, high=512)  # random window size between 200 and 510
+        else:
+            window_len = original_len
 
         if window_len > original_len:  # just in case text is shorter
             window_len = original_len  # take the original text length
@@ -104,6 +107,11 @@ class TransformBERT(object):
             start = np.random.randint(low=0, high=original_len - window_len)  # start shouldn't be too late
         end = start + window_len
 
+        if self.keep_all == True: # ignore everything and thake all!
+            start = 0
+            window_len = original_len
+
+        end = start + window_len
         input_ids = input_ids[start:end]
         attention_mask = attention_mask[start:end]
 
@@ -231,6 +239,63 @@ class CollaterCNN():
         return batch
 
 
+class CollaterBERT_hierarchical():
+
+    def __init__(self, padding_symbol = 0, section_size = 512, max_sect = 5):
+        self.padding_symbol = padding_symbol
+        self.section_size = section_size
+        self.max_sect = max_sect
+
+    def __call__(self, samples, *args, **kwargs):
+
+        batch = {}
+        batch_input_ids = [ x['input_ids'].clone() for x in samples]
+        batch_attention_mask = [ x['attention_mask'].clone() for x in samples]
+        batch_target = [ x['target'].clone() for x in samples ]
+        batch_textlength = [ x['textlength'].clone() for x in samples ]
+        batch_publisher = [ x['publisher'].clone() for x in samples ]
+        batch_articleId = [ x['articleId'] for x in samples ]
+
+
+        lens = [len(x) for x in batch_input_ids]
+        max_len = max(lens) # max_len = max(*lens)
+        max_sect = int(np.ceil(max_len/self.section_size)) # max number of section needed in this batch --> so size(batch_size,max_sect,512,786)
+        if max_sect > self.max_sect:
+            max_sect = self.max_sect
+        needed_len = max_sect*self.section_size
+
+        tmp_input_ids = []
+        tmp_attention_mask = []
+
+        for i, input_ids in enumerate(batch_input_ids):
+            if needed_len <= len(input_ids):
+                padded_ids = input_ids[:needed_len]
+            else:
+                padded_ids = torch.nn.functional.pad(input_ids, (0, needed_len - len(input_ids)),
+                                                    mode='constant', value= self.padding_symbol)
+            section_input_ids = torch.reshape(padded_ids, (max_sect, self.section_size))
+            tmp_input_ids.append(section_input_ids)
+
+        for i, attention_mask in enumerate(batch_attention_mask):
+            if needed_len <= len(attention_mask):
+                padded_attention_mask = attention_mask[:needed_len]
+            else:
+                padded_attention_mask = torch.nn.functional.pad(attention_mask, (0, needed_len - len(attention_mask)),
+                                                     mode='constant', value=self.padding_symbol)
+            section_attention_mask = torch.reshape(padded_attention_mask, (max_sect, self.section_size))
+            tmp_attention_mask.append(section_attention_mask)
+
+        batch_section_input_ids = torch.stack(tmp_input_ids)
+        batch_section_attention_mask = torch.stack(tmp_attention_mask)
+
+        batch['section_input_ids'] = batch_section_input_ids
+        batch['section_attention_mask'] = batch_section_attention_mask
+        batch['target'] = torch.tensor(batch_target, dtype=torch.float).unsqueeze(dim=-1)
+        batch['textlength'] = torch.tensor(batch_textlength, dtype=torch.float).unsqueeze(dim=-1)
+        batch['publisher'] = torch.tensor(batch_publisher, dtype=torch.float).unsqueeze(dim=-1)
+        batch['articleId'] = batch_articleId
+
+        return batch
 
 
 

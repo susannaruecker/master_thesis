@@ -22,13 +22,16 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
+model = models.BERT_hierarchical_RNN(n_outputs=1)
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+model.to(device)
+
 
 # HYPERPARAMETERS
-EPOCHS = 15
-BATCH_SIZE = 5
-FIXED_LEN = 512 #(e.g. 400 or 512)
-MIN_LEN = None # min window size (not used im FIXED_LEN is given)
-START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
+EPOCHS = 10
+BATCH_SIZE = 1
+SECTION_SIZE = 512
+MAX_SECT = 4
 LR = 1e-5
 MASK_WORDS = False
 FRACTION = 1
@@ -37,7 +40,7 @@ TARGET = 'avgTimeOnPage'
 PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"BERT_textlength_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
+identifier = f"BERT_hierarchicalRNN_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -49,8 +52,8 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 # DataSets and DataLoaders
 
-transform = data.TransformBERT(tokenizer = tokenizer, start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
-collater = data.CollaterBERT()
+transform = data.TransformBERT(tokenizer = tokenizer, keep_all = True, start = None, fixed_len = None, min_len= None)
+collater = data.CollaterBERT_hierarchical(max_sect=MAX_SECT, section_size=SECTION_SIZE)
 
 
 ds_train = data.PublisherDataset(publisher=PUBLISHER, set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
@@ -65,17 +68,24 @@ dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
 print(data.keys())
-input_ids = data['input_ids']
+input_ids = data['section_input_ids']
 print(input_ids.shape)
-attention_mask = data['attention_mask']
+#print(input_ids)
+attention_mask = data['section_attention_mask']
 print(attention_mask.shape)
+#print(attention_mask)
+print(data['publisher'])
+print(data['textlength'])
+print(data['articleId'])
+
 
 
 # loss and optimizer
-# optimizer = optim.AdamW(model.parameters(), lr=LR)
-optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
-optimizer_ffn = optim.Adam(model.ffn.parameters(), lr=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=LR)
+#optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
+#optimizer_ffn = optim.Adam(model.ffn.parameters(), lr=1e-3)
 loss_fn = nn.MSELoss()  # mean squared error
+
 
 ##### TRAINING AND EVALUATING #####
 
@@ -91,24 +101,31 @@ def evaluate_model(model):
     with torch.no_grad():
         for nr, d in enumerate(dl_dev):
             print("-Batch", nr, end='\r')
-            input_ids = d["input_ids"].to(device)
-            attention_mask = d["attention_mask"].to(device)
+            section_input_ids = d["section_input_ids"].to(device)
+            section_attention_mask = d["section_attention_mask"].to(device)
             textlength = d["textlength"].to(device)
             targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength)
+            outputs = model(section_input_ids=section_input_ids,
+                            section_attention_mask=section_attention_mask,
+                            textlength=textlength)
             # print(outputs[:10])
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
 
             outputs = outputs.squeeze().cpu()
             targets = targets.squeeze().cpu()
-            pred.extend(outputs)
-            true.extend(targets)
+            if BATCH_SIZE > 1:
+                pred.extend(outputs)
+                true.extend(targets)
+            else:
+                pred.append(outputs)
+                true.append(targets)
 
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
             'MAE': mean_absolute_error(pred, true),
             'eval_loss': np.mean(eval_losses)}
+
 
 
 batch_count = 0
@@ -126,8 +143,8 @@ for epoch in range(EPOCHS):
         print("-Batch", nr, end='\r')
         batch_count += 1
 
-        input_ids = d["input_ids"].to(device)
-        attention_mask = d["attention_mask"].to(device)
+        section_input_ids = d["section_input_ids"].to(device)
+        section_attention_mask = d["section_attention_mask"].to(device)
         textlength = d["textlength"].to(device)
         targets = d["target"].to(device)
         # print(targets.shape)
@@ -137,31 +154,32 @@ for epoch in range(EPOCHS):
             flat = attention_mask.flatten()
             flat[indices] = 0
             attention_mask = flat.reshape(attention_mask.shape)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength=textlength)
-        #print(outputs[:10])
-        # print(outputs.shape)
+        outputs = model(section_input_ids = section_input_ids,
+                        section_attention_mask = section_attention_mask,
+                        textlength=textlength)
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
-            #optimizer.step()
-            #optimizer.zero_grad()
+        if batch_count % 20 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
+            #print(batch_count, "updating optimizer")
+            optimizer.step()
+            optimizer.zero_grad()
 
-            optimizer_bert.step()
-            optimizer_ffn.step()
-            optimizer_bert.zero_grad()
-            optimizer_ffn.zero_grad()
+            #optimizer_bert.step()
+            #optimizer_ffn.step()
+            #optimizer_bert.zero_grad()
+            #optimizer_ffn.zero_grad()
 
-        if batch_count % 100 == 0: # every 100 batches: write to tensorboard
+        if batch_count % 300 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
             # log the running train loss to tensorboard
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 500 == 0: # every 300 batches: evaluate
+        if batch_count % 900 == 0: # every 300 batches: evaluate
             # EVALUATE
             eval_rt = evaluate_model(model = model)
             # log eval loss and pearson to tensorboard
@@ -183,9 +201,10 @@ for epoch in range(EPOCHS):
     torch.save(model.state_dict(), model_path)
 
 
-print("FIXED_LEN: ", FIXED_LEN)
-print("MIN_LEN: ", MIN_LEN)
-print("START: ", START)
+print("MAX_SECT: ", MAX_SECT)
+print("SECTION_SIZE: ", SECTION_SIZE)
 print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("LR: ", LR)
+
+

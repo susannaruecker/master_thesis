@@ -9,33 +9,10 @@ import numpy as np
 
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased' # 'distilbert-base-german-cased'
 
-#### deprecated, now use Bert_sequence
-#def get_model_and_tokenizer(pretrained = PRE_TRAINED_MODEL_NAME): # 'distilbert-base-german-cased'
-#    """
-#    from BertForSequenceClassification-Documentation:
-#    returns:
-#        loss: only when `label` is provided
-#        logits: shape (batch_size, config.num_labels)
-#        hidden_states: only returned when ``output_hidden_states=True``
-#        attentions: only returned when ``output_attentions=True``
-#    """
-#
-#    model = BertForSequenceClassification.from_pretrained(pretrained, # use path to load saved model, otherwise PRE_...
-#                                                          num_labels = 1, # turns "classification" into regression?
-#                                                          output_attentions = False,
-#                                                          output_hidden_states = False,
-#                                                         )
-#    # config.hidden_dropout_prob =  0.1 #TODO: das ist nicht sonderlich viel
-#
-#    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-#
-#    return model, tokenizer
-
 
 class Bert_sequence(nn.Module):
     """Basically BertForSequenceClassification, but it only outputs the logits.
     """
-
     def __init__(self, n_outputs):
         super(Bert_sequence, self).__init__()
         self.bert = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
@@ -50,38 +27,24 @@ class Bert_sequence(nn.Module):
 
 # das hier ist im Wesentlichen (glaube ich...) das gleiche, aber mit anderem Dropout und einem extra Intermediate Linea Layer
 class Bert_regression(nn.Module):
-    """ This uses BertModel, applies own dropout and adds two linear Layers
-
-    from BertModel_Documentation:
-    returns:
-        Return:
-        last_hidden_state: shape(batch_size, sequence_length, hidden_size)
-        pooler_output: (batch_size, hidden_size):
-            Last layer hidden-state of the first token of the sequence (classification token) #TODO: Sollte ich das ernst nehmen?
-            This output is usually *not* a good summary of the semantic content of the input, you're often better with averaging or pooling
-            the sequence of hidden-states for the whole input sequence.
-        hidden_states: only returned when ``output_hidden_states=True``
-        attentions: only returned when ``output_attentions=True``
+    """ uses original BertModel, own dropout and linear layer
     """
-
     def __init__(self, n_outputs):
         super(Bert_regression, self).__init__()
         self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME)
         self.drop = nn.Dropout(p=0.3) # ich glaube, bei BertForSequenceClassification ist das 0.1
-        #self.fc = nn.Linear(self.bert.config.hidden_size, 128) # (hidden_size = 768) # das hat BertForSequenceClassification nicht
         self.out = nn.Linear(self.bert.config.hidden_size, n_outputs) # 128
 
     def forward(self, input_ids, attention_mask):
-        last_hidden = self.bert(input_ids=input_ids, attention_mask=attention_mask) [1] # stimmt das? ist trotzdem nur das vom CLS, oder?
+        last_hidden = self.bert(input_ids=input_ids, attention_mask=attention_mask) [1] # last hidden state from CLS, right?
         last_hidden = self.drop(last_hidden) # Dropout
-        #inter = self.fc(last_hidden)
-        #out = self.out(inter)
         out = self.out(last_hidden)
         return out
 
 
-# Das hier nimmt nicht den last hidden state des CLS-Tokens als Sequence-Repräsentation, sondern mittelt über alle
 class Bert_averaging(nn.Module):
+    """ does use ALL last hidden states (not just from CLS) and takes average, then dropout and linear layer
+    """
     def __init__(self, n_outputs):
         super(Bert_averaging, self).__init__()
         self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
@@ -103,6 +66,8 @@ class Bert_averaging(nn.Module):
 
 
 class Bert_baseline(nn.Module):
+    """ just BertModel with an FFN on top (no textlength or publisher info)
+    """
     def __init__(self, n_outputs):
         super(Bert_baseline, self).__init__()
         self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
@@ -122,32 +87,19 @@ class Bert_baseline(nn.Module):
 
     def forward(self, input_ids, attention_mask):
         out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
-
+        hidden_state_cls = out_bert[1]  # pooled output (hidden state of CLS token with some modifications)
         out = self.ffn(hidden_state_cls)
-
         return out
-
-# not yet used, maybe something to try?
-#class DistilBert_sequence(Bert_sequence):
-#    """ uses everything from Bert_sequence, but uses DistilBert instead of Bert
-#    ACHTUNG: Der Tokenizer verwendet andere special tokens, aber das Dataset sollte das richtig machen...
-#    """
-#    def __init__(self, n_outputs):
-#        super(Bert_sequence, self).__init__()
-#        self.bert = DistilBertForSequenceClassification.from_pretrained('distilbert-base-german-cased',
-#                                                                        num_labels=n_outputs,
-#                                                                        output_attentions=False,
-#                                                                        output_hidden_states=False)
 
 
 # (fast) identisch nachgebaut wie hier https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
 class CNN(nn.Module):
+    """ uses dataloader that returns input_matrix von input_ids of the text
+    """
     def __init__(self, num_outputs,
                        embs_dim = 300,
                        filter_sizes=[3, 4, 5],
-                       num_filters=[100,100,100]
-                 ):
+                       num_filters=[100,100,100]):
         super(CNN, self).__init__()
         self.embs_dim = embs_dim
         self.num_outputs = num_outputs
@@ -166,7 +118,6 @@ class CNN(nn.Module):
         self.drop = nn.Dropout(p=0.5)
         self.drop_embs = nn.Dropout(p=0.2)
         self.LReLU = nn.LeakyReLU(0.01)
-
 
     def forward(self, input_matrix):
         # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
@@ -208,6 +159,8 @@ class CNN(nn.Module):
 
 # (fast) identisch nachgebaut wie hier https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
 class CNN_textlength(nn.Module):
+    """ same as the CNN but adds textlength info
+    """
     def __init__(self, num_outputs,
                        embs_dim = 300,
                        filter_sizes=[3, 4, 5],
@@ -234,84 +187,20 @@ class CNN_textlength(nn.Module):
 
 
     def forward(self, input_matrix, textlength):
-        # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
         x_embed = self.drop_embs(input_matrix)
-        #print("x_embed", x_embed.size())
-
-        # Permute `x_embed` to match input shape requirement of `nn.Conv1d`.
-        # Output shape: (b, embed_dim, max_len)
         x_reshaped = x_embed.permute(0, 2, 1)
-        #print("x_reshaped", x_reshaped.size())
-
-        # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
-        #print("x_conv_list_0", x_conv_list[0].size())
-        #print("x_conv_list_1", x_conv_list[1].size())
-        #print("x_conv_list_2", x_conv_list[2].size())
 
-        ## Max pooling. Output shape: (b, num_filters[i], 1)
-        #x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
-        #               for x_conv in x_conv_list]
-
-        # Average pooling. Output shape: (b, num_filters[i], 1)
         x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
                        for x_conv in x_conv_list]
 
-        # Concatenate x_pool_list to feed the fully connected layer.
-        # Output shape: (b, sum(num_filters))
         x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
-        #print("x_fc", x_fc.size())
 
-        # Output shape: (b, n_classes)
         x_fc2 = self.drop(self.LReLU(self.fc(x_fc)))
-        #print("x_fc2", x_fc2.size())
         concatenated = torch.cat([x_fc2, textlength], dim=1)
-
         out = self.out(concatenated)
-        #print("out", out.size())
 
         return out
-
-
-# # basically the same as above but smaller and with an intermediate linear layer
-# class CNN_small(nn.Module):
-#     def __init__(self, num_outputs,
-#                        embs_dim = 300,
-#                        filter_sizes=[3, 4, 5],
-#                        num_filters=[20,20,20]
-#                  ):
-#         super(CNN_small, self).__init__()
-#         self.embs_dim = embs_dim
-#         self.num_outputs = num_outputs
-#         self.filter_sizes = filter_sizes
-#         self.num_filters = num_filters
-#
-#         self.conv1d_list = nn.ModuleList([ nn.Conv1d(in_channels=self.embs_dim,
-#                                                      out_channels=self.num_filters[i],
-#                                                      kernel_size=self.filter_sizes[i])
-#                                            for i in range(len(self.filter_sizes))
-#                                          ])
-#
-#         self.fc = nn.Linear(np.sum(self.num_filters), 32)
-#         self.out = nn.Linear(32, self.num_outputs)
-#         self.drop = nn.Dropout(p=0.4) # hier war sonst IMMER 0.5, mal kleiner ausprobiert
-#         self.drop_embs = nn.Dropout(p=0.2)
-#
-#     def forward(self, x):
-#         x_embed = self.drop_embs(x)
-#         x_reshaped = x_embed.permute(0, 2, 1)
-#
-#         x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
-#
-#         x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
-#                        for x_conv in x_conv_list]
-#
-#         x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
-#
-#         inter = self.fc(self.drop(x_fc))
-#         out = self.out(self.drop(inter))
-#         return out
-
 
 
 class FFN_BERT(nn.Module):
@@ -327,7 +216,7 @@ class FFN_BERT(nn.Module):
 
         self.publisher_embs = nn.Embedding(5, 100)
 
-        self.ffn = nn.Sequential(nn.Linear(869, 256), # 869 = 768 (Bert) + 100 (Embs) + 1 (textlength)
+        self.ffn = nn.Sequential(nn.Linear(869, 256), # 869 = 768 (Bert) + 100 (publisher Embs) + 1 (textlength)
                                  nn.LeakyReLU(0.01),
                                  nn.Dropout(p=0.3),
                                  nn.Linear(256, 128),
@@ -352,7 +241,7 @@ class FFN_BERT(nn.Module):
 
 
 class baseline(nn.Module):
-    """Just the FFN with textlength and publisher.
+    """ an FFN with textlength and publisher
     """
 
     def __init__(self, n_outputs):
@@ -379,7 +268,7 @@ class baseline(nn.Module):
 
 
 class baseline_textlength(nn.Module):
-    """An FFN with just textlength.
+    """an FFN with JUST textlength
     """
 
     def __init__(self, n_outputs):
@@ -426,10 +315,9 @@ class baseline_in_FFNBERTFeatures(baseline):
         super(baseline_in_FFNBERTFeatures, self).__init__(n_outputs=1)
         self.fc1 = nn.Linear(869, 256)
 
-
     def forward(self, textlength, publisher, bert_output):
         publisher = self.publisher_embs(publisher).squeeze()
-        concatenated = torch.cat([bert_output, publisher, textlength], dim=1) # bert_output is avg of last hidden states
+        concatenated = torch.cat([bert_output, publisher, textlength], dim=1) # bert_output is avg of last hidden states (size 768)
         #print(concatenated.size())
         out_fc1 = self.dropout(self.LReLU(self.fc1(concatenated))) # from size 869 to 256
         out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
@@ -520,6 +408,176 @@ class BERT_textlength(nn.Module):
         return out
 
 
+class BERT_hierarchical(nn.Module):
+    """
+    split text in chunks of <=512 tokens and combine outputs somehow
+    """
+
+    def __init__(self, n_outputs, max_sect = 5):
+        super(BERT_hierarchical, self).__init__()
+        self.max_sect = max_sect
+        self.bert = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                                                  num_labels=n_outputs,
+                                                                  output_attentions=False,
+                                                                  output_hidden_states=True) # je nachdem, was man will
+
+        # self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+        #                                       output_attentions = False,
+        #                                       output_hidden_states = True)
+
+        self.weight_vector = torch.nn.Parameter(torch.rand(1, self.max_sect), requires_grad=True,
+                                                ) # learnable weight vector for weighted sum of section outputs
+
+        ### Das hier ist nötig, wenn man selbstständig mit dem last hidden state vom CLS-Token weitermacht
+        ### (Bert-Model statt BertForSequencrClassification)
+        # self.ffn = nn.Sequential(nn.Linear(768, 256),  #768 (Bert)
+        #                          nn.LeakyReLU(0.01),
+        #                          nn.Dropout(p=0.3),
+        #                          nn.Linear(256, 128),
+        #                          nn.LeakyReLU(0.01),
+        #                          nn.Dropout(p=0.3),
+        #                          nn.Linear(128, 64),
+        #                          nn.LeakyReLU(0.01),
+        #                          nn.Dropout(p=0.3),
+        #                          nn.Linear(64, n_outputs)
+        #                          )
+
+        self.out = nn.Sequential(nn.Linear(2, 10),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(10, 5),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(5, n_outputs)
+                                 )
+
+    def forward(self, section_input_ids, section_attention_mask, textlength):
+        batch_size = section_input_ids.size()[0]
+        nr_sections = section_input_ids.size()[1]
+        sections_out_dummy = torch.zeros(batch_size, self.max_sect, 1,
+                                         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')) # to be filled (batch_size, max_sect, 1)
+
+        #print("nr_sections in this batch:", nr_sections)
+        #print(section_input_ids.size())
+        #print(section_attention_mask.size())
+        for nr in range(nr_sections):
+            #print("nr", nr)
+            input_ids = section_input_ids[:,nr,:]
+            #print(input_ids.size())
+            attention_mask = section_attention_mask[:,nr,:]
+            #print(attention_mask.size())
+            out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+
+            ####hidden_state_cls = out_bert[1]  # if bert = BertModel: pooled output (hidden state of first token with some modifications)
+            ####section_out = self.ffn(hidden_state_cls)
+
+            section_out = out_bert[0] # das sind die logits wen bert = BertForSequenceClassification (out_bert[1] wäre last hidden state of CLS)
+
+            #print("section_out", section_out.size())
+            #print(section_out)
+            sections_out_dummy[:,nr,:] = section_out
+        sections_out = sections_out_dummy
+        #print("sections_out", sections_out.size())
+        #print("sections_out", sections_out)
+
+        #print("weight_vector", self.weight_vector.size())
+        #print("weight_vector", self.weight_vector)
+
+
+        ###section_sum = torch.sum(sections_out, dim=1) # this would be normal sum WITHOUT weighting
+
+        ##### TODO: Das hier ist sehr umständlich, wie geht das besser? Immer dot-product mit weigth_vector aber halt jede batch
+        weight_matrix = self.weight_vector.repeat(1,batch_size).view(batch_size, self.max_sect).unsqueeze(1)
+        #print("weight_matrix", weight_matrix.size())
+        #print(weight_matrix)
+        section_sum = torch.bmm(weight_matrix, sections_out).squeeze(1)
+
+        #print("weighted_sum", section_sum.size())
+        #print(section_sum)
+
+        #concatenated = torch.cat([section_sum, textlength], dim=1)
+        #print("concatenated", concatenated)
+        #print(concatenated.size()) # just the "textlength" sum and the textlength
+
+        #out = self.out(concatenated)
+        #print("out", out.size())
+        #print(out)
+
+        #return out
+        return section_sum # TODO: erstmal ohne Textlänge einzubringen
+
+class BERT_hierarchical_RNN(nn.Module):
+    """
+    split text in chunks of <=512 tokens and combine outputs somehow
+    """
+
+    def __init__(self, n_outputs):
+        super(BERT_hierarchical_RNN, self).__init__()
+        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                              output_attentions = False,
+                                              output_hidden_states = True)
+
+        #self.rnn = nn.RNN(768, 264, 2) # TODO: wieviele layers? welche hidden size?
+        self.rnn = nn.GRU(768, 264, 2) # auch mal ausprobieren?
+        #self.rnn = nn.LSTM(768, 264, 2)
+
+        self.out = nn.Sequential(nn.Linear(529, 128), # 2*264 + 1
+                                  nn.LeakyReLU(0.01),
+                                  nn.Dropout(p=0.3),
+                                  nn.Linear(128, 64),
+                                  nn.LeakyReLU(0.01),
+                                  nn.Dropout(p=0.3),
+                                  nn.Linear(64, n_outputs)
+                                  )
+
+    def forward(self, section_input_ids, section_attention_mask, textlength):
+        nr_sections = section_input_ids.size()[1]
+        sections_out = []
+        #print("nr_sections in this batch:", nr_sections)
+        #print(section_input_ids.size())
+        #print(section_attention_mask.size())
+        for nr in range(nr_sections):
+            #print("nr", nr)
+            input_ids = section_input_ids[:,nr,:]
+            #print(input_ids.size())
+            attention_mask = section_attention_mask[:,nr,:]
+            #print(attention_mask.size())
+            out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+            hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
+            #print(hidden_state_cls.size())
+            sections_out.append(hidden_state_cls)
+        sections_out = torch.stack(sections_out, dim=1) # (batchsize, sections, 768)
+        #print(sections_out)
+        #print("section_out", sections_out.size())
+
+        # now an rnn over all section_out per section
+        #print(sections_out.permute(1,0,2).size())
+        output, hidden_state_last_timestep = self.rnn(sections_out.permute(1,0,2))
+        #print("output", output.size())
+        #print("hidden_state_last_timestep", hidden_state_last_timestep.size())
+        hidden_state_last_timestep = hidden_state_last_timestep.permute(1,0,2)
+        stacked = hidden_state_last_timestep.reshape(hidden_state_last_timestep.size()[0], -1) # (batch_size, ...)
+        #print("stacked", stacked.size())
+        concatenated = torch.cat([stacked, textlength], dim=1)
+        #print("concat", concatenated.size())
+
+        out = self.out(concatenated)
+        #print("out", out.size())
+
+
+
+        #section_sum = torch.sum(sections_out, dim=1)
+        #print(section_sum)
+        #print(section_sum.size())
+        #concatenated = torch.cat([section_sum, textlength], dim=1)
+        #print(concatenated)
+        #print(concatenated.size()) # just the "textlength" sum and the texlength
+
+        #out = self.out(concatenated)
+
+        return out
+
+
 # mal anders: die Metadaten in Bert unten reinschieben, also auf Bert-Dimension bringen (FFN) und dann als sozusagen zwei "zusätzliche" Wörter für
 # Bert behandeln, also irgendwie auf die unterste Bert-Layer als "Wort" bringen.
 # publisher_EMbedings sind das schon
@@ -535,3 +593,16 @@ class BERT_textlength(nn.Module):
 # aaaaaaaaaah
 
 # aus der Signal-Nachricht (10.November): Bert einfach als Feature-Extraktor nehmen und nicht updaten!
+
+# not yet used, maybe something to try?
+#class DistilBert_sequence(Bert_sequence):
+#    """ uses everything from Bert_sequence, but uses DistilBert instead of Bert
+#    ACHTUNG: Der Tokenizer verwendet andere special tokens, aber das Dataset sollte das richtig machen...
+#    """
+#    def __init__(self, n_outputs):
+#        super(Bert_sequence, self).__init__()
+#        self.bert = DistilBertForSequenceClassification.from_pretrained('distilbert-base-german-cased',
+#                                                                        num_labels=n_outputs,
+#                                                                        output_attentions=False,
+#                                                                        output_hidden_states=False)
+
