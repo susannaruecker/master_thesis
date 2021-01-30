@@ -55,7 +55,6 @@ def get_raw_df():
     NOZ['publisher'] = 'NOZ'
     bonn['publisher'] = 'bonn'
 
-
     NOZ['titel'] = NOZ["titel_html"]
     NOZ = NOZ[NOZ.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
     NOZ = NOZ.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
@@ -64,12 +63,10 @@ def get_raw_df():
     bonn = bonn[bonn.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
     bonn = bonn.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
 
-
     SZ.rename('SZ_{}'.format, inplace=True)
     TV.rename('TV_{}'.format, inplace=True)
     NOZ.rename('NOZ_{}'.format, inplace=True)
     bonn.rename('bonn_{}'.format, inplace=True)
-
 
     #print(SZ.head())
     #print(TV.head())
@@ -143,6 +140,8 @@ def get_publisher_df(publ):
 
 
 def get_text(publisher, ID):
+    """
+    ### so liegen die gerade auf dawkins:
     if publisher in ['SZ', 'TV']:
         folder = ROOT / '201112_dataNLP_SZ_TV' / publisher / 'txt'
     elif publisher == 'NOZ':
@@ -152,6 +151,9 @@ def get_text(publisher, ID):
     else:
         print("no folder found!")
         folder = ""
+    """
+    ### so liegen sie auf gpu1:
+    folder = Path('/home/ruecker/data/Daten_INWT/original') / publisher / 'txt'
 
     with open(folder / f"ID_{ID}.txt", "r") as f:
         text = f.read()
@@ -189,6 +191,11 @@ def z_transform(column):
 def percentile_transform(column):
     percentile_transformed = column.apply(lambda x: percentileofscore(column, x))
     return percentile_transformed
+
+
+def relative_absolute_error(pred, true):
+    rae = np.sum(abs(pred-true)) / np.sum(abs(true-np.mean(true)))
+    return rae*100
 
 
 def get_time_class(row, min, max):

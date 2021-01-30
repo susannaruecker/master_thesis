@@ -21,10 +21,10 @@ print('Using device:', device)
 
 
 # HYPERPARAMETERS
-EPOCHS = 10
+EPOCHS = 65
 BATCH_SIZE = 3
-SECTION_SIZE = 200
-MAX_SECT = 6
+SECTION_SIZE = 150
+MAX_SECT = 8
 LR = 1e-5
 MASK_WORDS = False
 FRACTION = 1
@@ -61,9 +61,9 @@ ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTI
 ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
 print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
 
-dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
-dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
-dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True) # necessary for pred.extend()
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
 
 # have a look at one batch in dl_train to see if shapes make sense
 data = next(iter(dl_train))
@@ -81,9 +81,11 @@ print(data['articleId'])
 
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=LR)
-#optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
-#optimizer_ffn = optim.Adam(model.ffn.parameters(), lr=1e-3)
+#optimizer = optim.AdamW(model.parameters(), lr=LR)
+optimizer_bert = optim.AdamW(list(model.bert.parameters())
+                             +list(model.bert_ffn.parameters())
+                             +[model.weight_vector], lr=LR) # klappt das so?
+optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
 loss_fn = nn.MSELoss()  # mean squared error
 
 
@@ -114,12 +116,14 @@ def evaluate_model(model):
 
             outputs = outputs.squeeze().cpu()
             targets = targets.squeeze().cpu()
+
             pred.extend(outputs)
             true.extend(targets)
 
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
             'MAE': mean_absolute_error(pred, true),
+            'RAE': utils.relative_absolute_error(np.array(pred), np.array(true)),
             'eval_loss': np.mean(eval_losses)}
 
 
@@ -161,13 +165,13 @@ for epoch in range(EPOCHS):
 
         if batch_count % 15 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
             #print(batch_count, "updating optimizer")
-            optimizer.step()
-            optimizer.zero_grad()
+            #optimizer.step()
+            #optimizer.zero_grad()
 
-            #optimizer_bert.step()
-            #optimizer_ffn.step()
-            #optimizer_bert.zero_grad()
-            #optimizer_ffn.zero_grad()
+            optimizer_bert.step()
+            optimizer_ffn.step()
+            optimizer_bert.zero_grad()
+            optimizer_ffn.zero_grad()
 
         if batch_count % 300 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
@@ -175,7 +179,8 @@ for epoch in range(EPOCHS):
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 900 == 0: # every 300 batches: evaluate
+        if batch_count % 1200 == 0: # every 300 batches: evaluate
+
             # EVALUATE
             eval_rt = evaluate_model(model = model)
             # log eval loss and pearson to tensorboard
@@ -183,19 +188,48 @@ for epoch in range(EPOCHS):
             print("Pearson's r on dev set:", eval_rt['Pearson'])
             print("MSE on dev set:", eval_rt['MSE'])
             print("MAE on dev set:", eval_rt['MAE'])
+            print("RAE on dev set:", eval_rt['RAE'])
+
             writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
             writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
             writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
             writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
+            writer.add_scalar('RAE', eval_rt['RAE'], batch_count)
+
+            print("weight_vector values now:", model.weight_vector.data)
 
             model = model.train() # make sure it is back to train mode
 
     print("Mean train loss epoch:", np.mean(train_losses))
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
 
-    print("saving model to", model_path)
-    torch.save(model.state_dict(), model_path)
+    print("saving model, optimizer, epoch, batch_count to", model_path)
+    #torch.save(model.state_dict(), model_path)
 
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_bert_state_dict': optimizer_bert.state_dict(),
+        'optimizer_ffn_state_dict': optimizer_ffn.state_dict(),
+        'running_loss': running_loss,
+        'batch_count': batch_count
+                }, model_path)
+
+# to load later
+# model = TheModelClass(*args, **kwargs)
+# optimizer = TheOptimizerClass(*args, **kwargs)
+#
+# checkpoint = torch.load(PATH)
+# model.load_state_dict(checkpoint['model_state_dict'])
+# optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+# epoch = checkpoint['epoch']
+# running_loss = checkpoint['running_loss']
+# batch_count = checkpoint['batch_count']
+
+#
+# model.eval()
+# # - or -
+# model.train()
 
 print("MAX_SECT: ", MAX_SECT)
 print("SECTION_SIZE: ", SECTION_SIZE)
@@ -203,4 +237,5 @@ print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("LR: ", LR)
 
+# nach 70 Epochen war: weight_vector values now: tensor([1.2078, 1.1993, 1.1906, 1.1719, 1.1554, 1.1367, 1.1184, 1.1134]
 

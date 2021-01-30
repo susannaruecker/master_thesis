@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+#### These models all use only the text, no textlength or other info!
+
 import torch
 from torch import optim, nn
 from transformers import BertTokenizer
@@ -40,18 +42,19 @@ elif MODEL == 'BERT_baseline':
 model.to(device)
 
 # HYPERPARAMETERS
-EPOCHS = 10
-BATCH_SIZE = 8
-FIXED_LEN = 400 # (e.g. 400 or 512)
+EPOCHS = 20
+BATCH_SIZE = 5
+FIXED_LEN = 512 # (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if MAX_LEN is specified you probably want to start at 0
 LR = 0.00001 # normalerweise immer 1e5 # war auch mal 1e-6
 FRACTION = 1
 
 TARGET = 'avgTimeOnPage'
+PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_NOZ"
+identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
 # setting up Tensorboard
 tensorboard_path = f'runs_{TARGET}/{identifier}'
@@ -66,14 +69,14 @@ model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 transform = data.TransformBERT(tokenizer = tokenizer, start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
 collater = data.CollaterBERT()
 
-ds_train = data.PublisherDataset(publisher="NOZ", set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
-ds_dev = data.PublisherDataset(publisher="NOZ", set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
-ds_test = data.PublisherDataset(publisher="NOZ", set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
+ds_train = data.PublisherDataset(publisher=PUBLISHER, set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
 print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
 
 dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
-dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
-dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater, drop_last=True)
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater, drop_last=True)
 
 
 # have a look at one batch in dl_train to see if shapes make sense
@@ -122,6 +125,7 @@ def evaluate_model(model):
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
             'MAE': mean_absolute_error(pred, true),
+            'RAE': utils.relative_absolute_error(np.array(pred), np.array(true)),
             'eval_loss': np.mean(eval_losses)}
 
 
@@ -171,17 +175,29 @@ for epoch in range(EPOCHS):
             print("Pearson's r on dev set:", eval_rt['Pearson'])
             print("MSE on dev set:", eval_rt['MSE'])
             print("MAE on dev set:", eval_rt['MAE'])
+            print("RAE on dev set:", eval_rt['RAE'])
+
             writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
             writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
             writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
             writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
+            writer.add_scalar('RAE', eval_rt['RAE'], batch_count)
+
             model = model.train() # make sure it is back to train mode
 
     print("Mean train loss epoch:", np.mean(train_losses))
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
 
-    print("saving model to", model_path)
-    torch.save(model.state_dict(), model_path)
+    print("saving model, optimizer, epoch, batch_count to", model_path)
+    # torch.save(model.state_dict(), model_path)
+
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'running_loss': running_loss,
+        'batch_count': batch_count
+    }, model_path)
 
 
 print("FIXED_LEN: ", FIXED_LEN)

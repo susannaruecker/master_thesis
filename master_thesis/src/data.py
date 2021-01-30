@@ -107,7 +107,7 @@ class TransformBERT(object):
             start = np.random.randint(low=0, high=original_len - window_len)  # start shouldn't be too late
         end = start + window_len
 
-        if self.keep_all == True: # ignore everything and thake all!
+        if self.keep_all == True: # ignore everything and take all!
             start = 0
             window_len = original_len
 
