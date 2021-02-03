@@ -14,75 +14,31 @@ import gzip
 import os
 import os.path
 from scipy.stats import percentileofscore
+import torch
+
 
 
 #ROOT = Path('/Volumes/INWT/Daten_NLP') # encrypted folder!
 ROOT = Path('/home/ruecker/data/Daten_INWT/') # JULIE-Server
-
-#DATA = ROOT / '200820_dataNLP' # alter Datensatz (noch ohne Spalte Ausreißer
-#DATA = ROOT / '200921_dataNLP' # neuer
-#DATA = ROOT / '201001_dataNLP' # neuer, mit Spalte 'prozentVerlag'
-#DATA = ROOT / '201103_dataNLP' # neuer, mit Spalte 'text_crawling'
 
 META = ROOT / 'Dokumentation_Daten.txt'
 
 PROJECT_ROOT = Path(__file__).parents[2].resolve()
 OUTPUT = PROJECT_ROOT / 'master_thesis' / 'outputs' # to save tsv files and other stuff
 
-#def read_data(file): # for reading the individual publisher files
-#    raw = pd.read_csv(DATA / file, engine='python', quoting=csv.QUOTE_ALL, escapechar = '\\', index_col = 'articleId')
-#    #raw = pd.read_csv(DATA / file, encoding='utf-8', error_bad_lines=False, quotechar = '"', doublequote=False)
-#    return raw
 
 def get_raw_df():
-    #df = pd.read_csv(DATA / 'combined_textCrawling.tsv', sep='\t') # mit dem hier sind die bisherigen gelaufen
 
-    # die hier sind die neuen (mit meinen Texten)
-    path_SZ = ROOT / '201112_dataNLP_SZ_TV/201112_SZ_article_text.txt'
-    path_TV = ROOT / '201112_dataNLP_SZ_TV/201112_TV_article_text.txt'
-    path_NOZ = ROOT / '201117_dataNLP_NOZ/201117_NOZ_article_text.txt'
-    path_bonn = ROOT / '201211_dataNLP_bonn/201211_bonn_article_text.txt'
-
-
-    SZ = pd.read_csv(path_SZ, sep='\t', index_col = 'articleId')
-    TV = pd.read_csv(path_TV, sep='\t', index_col = 'articleId')
-    NOZ = pd.read_csv(path_NOZ, sep='\t', index_col='articleId')
-    bonn = pd.read_csv(path_bonn, sep='\t', index_col='articleId')
-
-
-    SZ['publisher'] = 'SZ'
-    TV['publisher'] = 'TV'
-    NOZ['publisher'] = 'NOZ'
-    bonn['publisher'] = 'bonn'
-
-    NOZ['titel'] = NOZ["titel_html"]
-    NOZ = NOZ[NOZ.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
-    NOZ = NOZ.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
-
-    bonn['titel'] = bonn["titel_html"]
-    bonn = bonn[bonn.other_content == "no"] # die Spalte enthält Hinweis, ob wahrscheinlich Video/Tweet etc. dabei war
-    bonn = bonn.dropna(subset=['teaser', 'article_body'])  # drop the rows where teaser or article_body is missing
-
-    SZ.rename('SZ_{}'.format, inplace=True)
-    TV.rename('TV_{}'.format, inplace=True)
-    NOZ.rename('NOZ_{}'.format, inplace=True)
-    bonn.rename('bonn_{}'.format, inplace=True)
-
-    #print(SZ.head())
-    #print(TV.head())
-    #print(NOZ.head())
-
-    SZ['nr_tokens_publisher'] = SZ["nr_tokens_text"] # das ist nur temporär, weil so gerade in data.py die Textlänge heißt...
-    TV['nr_tokens_publisher'] = TV["nr_tokens_text"]
-    NOZ['nr_tokens_publisher'] = NOZ["nr_tokens_text"]
-    bonn['nr_tokens_publisher'] = bonn["nr_tokens_text"]
+    SZ = get_publisher_df('SZ')
+    TV = get_publisher_df('TV')
+    bonn = get_publisher_df('bonn')
+    NOZ = get_publisher_df('NOZ')
 
 
     columns = set(SZ.columns).intersection(TV.columns).intersection(NOZ.columns).intersection(bonn.columns)
     print("Shared columns:", columns)
 
     df = pd.concat([SZ[columns], TV[columns], NOZ[columns], bonn[columns]])
-    df = df[df.language == "de"] # drop english (or empty) articles
 
     # df = df.fillna('')  # replacing Nan with emtpy string
     print("Shape of raw df:", df.shape)
@@ -92,7 +48,7 @@ def get_raw_df():
 def get_publisher_df(publ):
     # die hier sind die neuen (mit meinen Texten)
     if publ == "TV":
-        path_TV = ROOT / '201112_dataNLP_SZ_TV/201112_TV_article_text.txt'
+        path_TV = ROOT / 'prepared' / 'TV' / 'TV_prepared.tsv'
         TV = pd.read_csv(path_TV, sep='\t', index_col='articleId')
         TV['publisher'] = 'TV'
         TV.rename('TV_{}'.format, inplace=True)
@@ -100,7 +56,7 @@ def get_publisher_df(publ):
         df = TV
 
     if publ == "SZ":
-        path_SZ = ROOT / '201112_dataNLP_SZ_TV/201112_SZ_article_text.txt'
+        path_SZ = ROOT / 'prepared' / 'SZ' / 'SZ_prepared.tsv'
         SZ = pd.read_csv(path_SZ, sep='\t', index_col='articleId')
         SZ['publisher'] = 'SZ'
         SZ.rename('SZ_{}'.format, inplace=True)
@@ -108,7 +64,7 @@ def get_publisher_df(publ):
         df = SZ
 
     if publ == "NOZ":
-        path_NOZ = ROOT / '201117_dataNLP_NOZ/201117_NOZ_article_text.txt'
+        path_NOZ = ROOT / 'prepared' / 'NOZ' / 'NOZ_prepared.tsv'
         NOZ = pd.read_csv(path_NOZ, sep='\t', index_col='articleId')
         NOZ['publisher'] = 'NOZ'
 
@@ -121,7 +77,7 @@ def get_publisher_df(publ):
         df = NOZ
 
     if publ == "bonn":
-        path_bonn = ROOT / '201211_dataNLP_bonn/201211_bonn_article_text.txt'
+        path_bonn = ROOT / 'prepared' / 'bonn' / 'bonn_prepared.tsv'
         bonn = pd.read_csv(path_bonn, sep='\t', index_col='articleId')
         bonn['publisher'] = 'bonn'
 
@@ -162,6 +118,70 @@ def get_text(publisher, ID):
         text = text.replace(u'\xa0', u' ')
         text = text.replace(u'\xad', u'')
     return text
+
+
+def compare_state_dicts(sd1, sd2, look_at = "shape"):
+    """
+    Compares two PyTorch state dicts. Returns a dictionary of list, containing the names of matching or nonmatching
+    parameters, as well as those which are not present in both state dicts
+    :param sd1: First state_dict
+    :param sd2: Second state_dict
+    :return: Dict of Lists of parameters names
+    """
+    shared_keys = set(sd1.keys()).intersection(set(sd2.keys()))
+    only_sd1 = sorted(list(set(sd1.keys()).difference(shared_keys).union()))
+    only_sd2 = sorted(list(set(sd2.keys()).difference(shared_keys)))
+
+    shared_keys = sorted(list(shared_keys))
+    matching = []
+    not_matching = []
+    if look_at == "shape":
+        for k in shared_keys:
+            if sd1[k].shape == sd2[k].shape: # this checks only the shapes
+                matching.append(k)
+            else:
+                not_matching.append(k)
+    if look_at == "values":
+        for k in shared_keys:
+            if torch.equal(sd1[k], sd2[k]): # checks the parameters (their values!)
+                matching.append(k)
+            else:
+                not_matching.append(k)
+
+    return {"matching": matching,
+            "not matching": not_matching,
+            "only sd1": only_sd1,
+            "only sd2": only_sd2
+            }
+
+def modify_state_dict(sd_source, sd_target):
+    """
+        Compares two PyTorch state dicts for loading checkpoints: A source dict and a target dict.
+        Entries in the source dict that are not useful/matching for the target dict get deletet.
+        Entries in the target dict that are not present in the source dict get copied so that loading the checkpoint can
+        be done with strict = True.
+        :param sd_source: state_dict from checkpoint
+        :param sd_target: state_dict from the model to be filled
+        :return modified sd_source so that the keys (and values) match
+        """
+    rt = compare_state_dicts(sd_source, sd_target, look_at="shape")
+    sd_modified = dict(sd_source)
+
+    print("keys only found in source sd, deleting them:", rt["only sd1"])
+    for key in rt["only sd1"]:
+        del sd_modified[key]
+
+    print("matching key names, but different shapes, deleting them:", rt["not matching"])
+    for key in rt["not matching"]:
+        del sd_modified[key]
+
+    rt_new = compare_state_dicts(sd_modified, sd_target)
+
+    print("copying entries from target sd, that are missing in source sd:", rt_new["only sd2"])
+    for key in rt_new["only sd2"]:
+        sd_modified[key] = sd_target[key]
+
+    return sd_modified
 
 
 def detect_language(article_list):

@@ -35,7 +35,7 @@ elif MODEL == 'BERTModel':
 elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
     model = models.Bert_averaging(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERT_baseline':
+elif MODEL == 'BERT_baseline':                      # BertModel + linear layer, same naming as other models for loading weight
     model = models.Bert_baseline(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 

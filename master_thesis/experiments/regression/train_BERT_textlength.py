@@ -31,8 +31,8 @@ model.to(device)
 
 # HYPERPARAMETERS
 EPOCHS = 30
-BATCH_SIZE = 5
-FIXED_LEN = 512 #(e.g. 400 or 512)
+BATCH_SIZE = 15
+FIXED_LEN = 250 #(e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 LR = 1e-5
@@ -111,6 +111,12 @@ def evaluate_model(model):
             pred.extend(outputs)
             true.extend(targets)
 
+    rand_int = np.random.randint(low=0, high=len(pred) - 20)
+
+    print("Inspecting some predicted and their true values:")
+    print("predicted:", [round(t.item(), 2) for t in pred[rand_int:rand_int + 10]])
+    print("true:", [round(t.item(), 2) for t in true[rand_int:rand_int + 10]])
+
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
             'MAE': mean_absolute_error(pred, true),
@@ -153,7 +159,7 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 5 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
+        if batch_count % 3 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
             #optimizer.step()
             #optimizer.zero_grad()
 
