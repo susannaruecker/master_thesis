@@ -9,40 +9,43 @@ from torch.utils.data import DataLoader
 import numpy as np
 import scipy.stats as st
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-
 from torch.utils.tensorboard import SummaryWriter
-
 from master_thesis.src import utils, data, models
-
 import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
 #TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("device", help="specify which device to use ('cpu' or 'gpu')", type=str)
+args = parser.parse_args()
+
+device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BERT_baseline' #'BERTAvg' #'BERT' # 'BERTAvg' #'BERTModel'
+#MODEL = 'BertSequence'
+#MODEL = 'BertFFN'
+MODEL = 'BertAveraging'
 
-if MODEL == 'BERT':
-    model = models.Bert_sequence(n_outputs=1)       # this is exactly BertForSequenceClassifiaction (but just outputs logits)
+
+if MODEL == 'BertSequence':
+    model = models.BertSequence(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTModel':
-    model = models.Bert_regression(n_outputs=1)     # this is customized (dropout!) BertModel
+elif MODEL == 'BertFFN':
+    model = models.BertFFN(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERTAvg':                            # this uses averaged last hidden states over sequence instead of CLS-token
-    model = models.Bert_averaging(n_outputs=1)
+elif MODEL == 'BertAveraging':
+    model = models.BertAveraging(n_outputs=1)
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-elif MODEL == 'BERT_baseline':                      # BertModel + linear layer, same naming as other models for loading weight
-    model = models.Bert_baseline(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+
 
 model.to(device)
 
 # HYPERPARAMETERS
-EPOCHS = 20
+EPOCHS = 25
 BATCH_SIZE = 5
 FIXED_LEN = 512 # (e.g. 400 or 512)
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
@@ -57,7 +60,10 @@ PUBLISHER = 'NOZ'
 identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
 # setting up Tensorboard
-tensorboard_path = f'runs_{TARGET}/{identifier}'
+if args.device == 'cpu':
+    tensorboard_path = f'debugging/{identifier}'
+else:
+    tensorboard_path = f'runs_{TARGET}/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
@@ -74,9 +80,9 @@ ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTI
 ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
 print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
 
-dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater)
-dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater, drop_last=True)
-dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=4, shuffle=True, collate_fn=collater, drop_last=True)
+dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
+dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
 
 
 # have a look at one batch in dl_train to see if shapes make sense
@@ -100,7 +106,8 @@ loss_fn = nn.MSELoss()  # mean squared error
 ### helper function for EVALUATING on dev whenever we want
 def evaluate_model(model):
     print("evaluating")
-    model = model.eval()
+    #model = model.eval()
+    model.eval()
     eval_losses = []
 
     pred = []  # for calculating Pearson's r on dev
@@ -137,7 +144,8 @@ for epoch in range(EPOCHS):
 
     ### TRAINING on train
     print("training")
-    model = model.train()
+    #model = model.train()
+    model.train()
     train_losses = []
 
     for nr, d in enumerate(dl_train):
@@ -183,7 +191,8 @@ for epoch in range(EPOCHS):
             writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
             writer.add_scalar('RAE', eval_rt['RAE'], batch_count)
 
-            model = model.train() # make sure it is back to train mode
+            # model = model.train() # make sure it is back to train mode
+            model.train()
 
     print("Mean train loss epoch:", np.mean(train_losses))
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)

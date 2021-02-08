@@ -38,7 +38,7 @@ elif MODEL == 'BERTAvg':                            # this uses averaged last hi
 model.to(device)
 
 # get data (already conditionend on min_pageviews etc)
-df = utils.get_raw_df()
+df = utils.get_full_df()
 df = df[df.txtExists == True]
 df = df[df.nr_tokens_publisher > 100]
 print(df.shape)

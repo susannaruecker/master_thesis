@@ -16,15 +16,20 @@ import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
 ##TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("device", help="specify which device to use ('cpu' or 'gpu')", type=str)
+args = parser.parse_args()
+
+device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
 
 # HYPERPARAMETERS
 EPOCHS = 65
-BATCH_SIZE = 1
-SECTION_SIZE = 512 #todo: change back to 150 or higher?
-MAX_SECT = 4
+BATCH_SIZE = 2
+SECTION_SIZE = 250 #todo: change back to 150 or higher?
+MAX_SECT = 6
 LR = 1e-5
 MASK_WORDS = False
 FRACTION = 1
@@ -33,10 +38,13 @@ TARGET = 'avgTimeOnPage'
 PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
-identifier = f"BERT_hierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_pretrained_BERT_baseline"
+identifier = f"BERT_hierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_pretrained_BERT_textlength"
 
 # setting up Tensorboard
-tensorboard_path = f'runs_{TARGET}/{identifier}'
+if args.device == 'cpu':
+    tensorboard_path = f'debugging/{identifier}'
+else:
+    tensorboard_path = f'runs_{TARGET}/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
@@ -83,7 +91,7 @@ print(data['articleId'])
 # loss and optimizer
 #optimizer = optim.AdamW(model.parameters(), lr=LR)
 optimizer_bert = optim.AdamW(list(model.bert.parameters())
-                             +list(model.bert_ffn.parameters()))
+                             +list(model.bert_ffn.parameters()), lr = LR)
 optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=1e-3)
 optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
 loss_fn = nn.MSELoss()  # mean squared error
@@ -91,8 +99,8 @@ loss_fn = nn.MSELoss()  # mean squared error
 
 ### NEW: loading checkpoint (specific layer weights) from bert baseline
 
-checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_baseline_FIXLEN512_MINLENNone_START0_EP20_BS5_LR1e-05_avgTimeOnPage_NOZ'
-#checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_textlength_baseline_FIXLEN512_MINLENNone_START0_EP30_BS5_LR1e-05_avgTimeOnPage_NOZ'
+#checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_baseline_FIXLEN512_MINLENNone_START0_EP20_BS5_LR1e-05_avgTimeOnPage_NOZ'
+checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_textlength_baseline_FIXLEN250_MINLENNone_START0_EP30_BS15_LR1e-05_avgTimeOnPage_NOZ'
 
 model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
 
@@ -138,11 +146,9 @@ def evaluate_model(model):
                 pred.extend(outputs)
                 true.extend(targets)
 
-    rand_int = np.random.randint(low = 0, high = len(pred)-20)
-
     print("Inspecting some predicted and their true values:")
-    print("predicted:", [ round(t.item(), 2) for t in pred[rand_int:rand_int+10] ])
-    print("true:", [ round(t.item(), 2) for t in true[rand_int:rand_int+10] ])
+    print("predicted:", [ round(t.item(), 2) for t in pred[:10] ])
+    print("true:", [ round(t.item(), 2) for t in true[:10] ])
 
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
@@ -187,7 +193,7 @@ for epoch in range(EPOCHS):
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 45 == 0: #15 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
+        if batch_count % 20 == 0: #15 == 0: # update only every n batches (gradient accumulation) --> simulating bigger "batch size"
             #print(batch_count, "updating optimizer")
             #optimizer.step()
             #optimizer.zero_grad()
@@ -199,13 +205,13 @@ for epoch in range(EPOCHS):
             optimizer_ffn.zero_grad()
             optimizer_weight_vector.zero_grad()
 
-        if batch_count % 500 == 0: #300 == 0: # every 100 batches: write to tensorboard
+        if batch_count % 300 == 0: #300 == 0: # every 100 batches: write to tensorboard
             print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
             # log the running train loss to tensorboard
             writer.add_scalar('train loss', np.mean(running_loss), batch_count)
             running_loss = []
 
-        if batch_count % 1500 == 0: # every 300 batches: evaluate
+        if batch_count % 1200 == 0: # every 300 batches: evaluate
 
             # EVALUATE
             eval_rt = evaluate_model(model = model)

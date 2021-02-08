@@ -10,76 +10,46 @@ import numpy as np
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased' # 'distilbert-base-german-cased'
 
 
-class Bert_sequence(nn.Module):
-    """Basically BertForSequenceClassification, but it only outputs the logits.
+def get_BertModel():
+    bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                     output_attentions=False,
+                                     output_hidden_states=True)
+    return bert
+
+
+def get_BertForSequenceClassification(n_outputs):
+    bertSequence = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
+                                                                 num_labels = n_outputs,
+                                                                 output_attentions = False,
+                                                                 output_hidden_states = False)
+    return bertSequence
+
+
+
+##### multiple ways of Bert baseline (no textlength) #####
+
+class BertSequence(nn.Module):
+    """ simply BertForSequence (no non-linearity)
     """
     def __init__(self, n_outputs):
-        super(Bert_sequence, self).__init__()
-        self.bert = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                                                  num_labels = n_outputs,
-                                                                  output_attentions = False,
-                                                                  output_hidden_states = False)
+        super(BertSequence, self).__init__()
+        self.bertSequence = get_BertForSequenceClassification(n_outputs=1)
 
     def forward(self, input_ids, attention_mask):
-        out = self.bert(input_ids = input_ids, attention_mask = attention_mask)
-        return out[0] # just the logits
+        out_bert = self.bertSequence(input_ids=input_ids, attention_mask=attention_mask)
+        return out_bert[0] # logits...
 
 
-# das hier ist im Wesentlichen (glaube ich...) das gleiche, aber mit anderem Dropout und einem extra Intermediate Linea Layer
-class Bert_regression(nn.Module):
-    """ uses original BertModel, own dropout and linear layer
+class BertFFN(nn.Module):
+    """ BertModel, own FFN on top of hidden state of cls token
     """
     def __init__(self, n_outputs):
-        super(Bert_regression, self).__init__()
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME)
-        self.drop = nn.Dropout(p=0.3) # ich glaube, bei BertForSequenceClassification ist das 0.1
-        self.out = nn.Linear(self.bert.config.hidden_size, n_outputs) # 128
-
-    def forward(self, input_ids, attention_mask):
-        last_hidden = self.bert(input_ids=input_ids, attention_mask=attention_mask) [1] # last hidden state from CLS, right?
-        last_hidden = self.drop(last_hidden) # Dropout
-        out = self.out(last_hidden)
-        return out
-
-
-class Bert_averaging(nn.Module):
-    """ does use ALL last hidden states (not just from CLS) and takes average, then dropout and linear layer
-    """
-    def __init__(self, n_outputs):
-        super(Bert_averaging, self).__init__()
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                              output_hidden_states=True) # important!
-
-        self.drop = nn.Dropout(p=0.3) # ich glaube, bei BertForSequenceClassification ist das 0.1
-        self.out = nn.Linear(self.bert.config.hidden_size, n_outputs) # 128
-
-    def forward(self, input_ids, attention_mask):
-        hidden_states = self.bert(input_ids=input_ids, attention_mask=attention_mask) [0] # stimmt das?
-        #print(hidden_states.size())
-        avg_hidden = torch.mean(hidden_states, dim=1) # averaging the last hidden states of ALL tokens in sequence
-                                                       # instead of taking just the one of CLS-token
-        #print(avg_hidden.size())
-        avg_hidden = self.drop(avg_hidden) # Dropout
-        out = self.out(avg_hidden)
-        #print(out.size())
-        return out
-
-
-class Bert_baseline(nn.Module):
-    """ just BertModel with an FFN on top (no textlength or publisher info)
-    """
-    def __init__(self, n_outputs):
-        super(Bert_baseline, self).__init__()
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                              output_attentions=False,
-                                              output_hidden_states=True)
-        self.bert_ffn = nn.Sequential(nn.Linear(768, 256),  # 768 (Bert)
+        super(BertFFN, self).__init__()
+        self.bert = get_BertModel()
+        self.out = nn.Sequential(nn.Linear(768, 256), # 768 (Bert hidden state size)
                                  nn.LeakyReLU(0.01),
                                  nn.Dropout(p=0.3),
-                                 nn.Linear(256, 128),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(128, 64),
+                                 nn.Linear(256, 64),
                                  nn.LeakyReLU(0.01),
                                  nn.Dropout(p=0.3),
                                  nn.Linear(64, n_outputs)
@@ -87,9 +57,237 @@ class Bert_baseline(nn.Module):
 
     def forward(self, input_ids, attention_mask):
         out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_state_cls = out_bert[1]  # pooled output (hidden state of CLS token with some modifications)
-        out = self.bert_ffn(hidden_state_cls)
+        hidden_state_cls = out_bert[1]
+        out = self.out(hidden_state_cls)
         return out
+
+
+class BertAveraging(nn.Module):
+    """ does use ALL last hidden states (not just from CLS) and takes average
+        then linear layers
+    """
+    def __init__(self, n_outputs):
+        super(BertAveraging, self).__init__()
+        self.bert = get_BertModel()
+        self.out = nn.Sequential(nn.Linear(768, 64),
+                                 nn.LeakyReLU(0.01),
+                                 nn.Dropout(p=0.3),
+                                 nn.Linear(64, n_outputs)
+                                 )
+
+    def forward(self, input_ids, attention_mask):
+        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        hidden_states = out_bert[0] # stimmt das?
+        avg_hidden = torch.mean(hidden_states, dim=1) # averaging the last hidden states of ALL tokens in sequence
+                                                       # instead of taking just the one of CLS-token
+        out = self.out(avg_hidden)
+        return out
+
+
+
+
+
+class BERT_textlength_baseline(nn.Module):
+    """
+    here: BertModel
+    BERT output concatenated with textlength
+    then FFN
+    """
+
+    def __init__(self, n_outputs):
+        super(BERT_textlength_baseline, self).__init__()
+
+        self.bert = get_BertModel()
+        self.ffn = nn.Sequential(nn.Linear(769, 512),
+                             nn.LeakyReLU(0.01),
+                             nn.Dropout(p=0.3),
+                             nn.Linear(512, 128),
+                             nn.LeakyReLU(0.01),
+                             nn.Dropout(p=0.3),
+                             nn.Linear(128, n_outputs)
+                             )
+
+    def forward(self, input_ids, attention_mask, textlength):
+        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
+        concatenated = torch.cat([hidden_state_cls, textlength], dim=1)
+        out = self.ffn(concatenated)
+
+        return out
+
+
+
+
+class baseline_textlength(nn.Module):
+    """ no BERT!
+        an FFN with JUST textlength
+    """
+
+    def __init__(self, n_outputs):
+        super(baseline_textlength, self).__init__()
+
+        self.LReLU = nn.LeakyReLU(0.01)
+        self.dropout = nn.Dropout(p=0.3)
+
+        self.fc1 = nn.Linear(1, 32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.out = nn.Linear(32, n_outputs)
+
+    def forward(self, textlength):
+        out_fc1 = self.dropout(self.LReLU(self.fc1(textlength)))
+        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
+        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
+        out = self.out(out_fc3)
+
+        return out
+
+
+
+class BERT_hierarchical(nn.Module):
+    """
+    split text in chunks of <=512 tokens and combine outputs somehow
+    todo: should textlength be used or not?
+    """
+
+    def __init__(self, n_outputs, max_sect = 5):
+        super(BERT_hierarchical, self).__init__()
+        self.max_sect = max_sect
+
+        self.bertSequence = get_BertForSequenceClassification(n_outputs=1)
+        self.weight_vector = torch.nn.Parameter(torch.ones(self.max_sect), requires_grad=True) # learnable weight vector for weighted sum of section outputs
+
+
+    def forward(self, section_input_ids, section_attention_mask, textlength):
+        # Sven meint: hier so tun als wäre input shape (max_sect, Bert-Ids) also  batch ignorieren
+        batch_size = section_input_ids.size()[0]
+        nr_sections = section_input_ids.size()[1]
+        sections_out_dummy = torch.zeros(batch_size, self.max_sect, 1,
+                                         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')) # to be filled (batch_size, max_sect, 1)
+        #sections_out = []
+
+        ### Sven meint so: (das klappt aber nicht, die "zwei zu ignorierenden Dimensionen" scheinen zu stören
+        #out_bert = self.bert(input_ids = section_input_ids, attention_mask = section_attention_mask)
+        #section_out = out_bert[0]
+        #print("Sven section out", section_out)
+
+        for nr in range(nr_sections):
+            input_ids = section_input_ids[:,nr,:]
+                #input_ids = section_input_ids[nr,:]
+
+            attention_mask = section_attention_mask[:,nr,:]
+                #attention_mask = section_attention_mask[nr,:]
+
+            out_bert = self.bertSequence(input_ids=input_ids, attention_mask=attention_mask)
+
+            ### wenn BertModel:
+            #hidden_state_cls = out_bert[1]  # pooled output wenn BertModel (hidden state of first token with some modifications)
+            #section_out = self.bert_ffn(hidden_state_cls)
+
+            ### wenn BertForSequenceClassification:
+            section_out = out_bert[0] # das sind die logits wenn bert = BertForSequenceClassification
+
+            sections_out_dummy[:,nr,:] = section_out
+                #sections_out_dummy[nr,:] = section_out
+                #sections_out.append(section_out)
+
+            #sections_out = torch.stack(sections_out, dim=1)
+        sections_out = sections_out_dummy
+
+        ###section_sum = torch.sum(sections_out, dim=1) # this would be normal sum WITHOUT weighting
+
+        section_sum = torch.sum(sections_out.squeeze(2)*self.weight_vector, dim=1).unsqueeze(1)
+
+        #concatenated = torch.cat([section_sum, textlength], dim=1)
+        #out = self.ffn(concatenated)
+        #return out
+        return section_sum
+
+
+
+
+
+
+
+
+class BERT_hierarchical_RNN(nn.Module):
+    """
+    split text in chunks of <=512 tokens and combine outputs somehow
+    """
+
+    def __init__(self, n_outputs):
+        super(BERT_hierarchical_RNN, self).__init__()
+        self.bert = get_BertModel()
+
+        #self.rnn = nn.RNN(768, 264, 2) # TODO: wieviele layers? welche hidden size?
+        self.rnn = nn.GRU(768, 264, 2) # auch mal ausprobieren?
+        #self.rnn = nn.LSTM(768, 264, 2)
+
+        self.out = nn.Sequential(nn.Linear(529, 128), # 2*264 + 1
+                                  nn.LeakyReLU(0.01),
+                                  nn.Dropout(p=0.3),
+                                  nn.Linear(128, 64),
+                                  nn.LeakyReLU(0.01),
+                                  nn.Dropout(p=0.3),
+                                  nn.Linear(64, n_outputs)
+                                  )
+
+    def forward(self, section_input_ids, section_attention_mask, textlength):
+        nr_sections = section_input_ids.size()[1]
+        sections_out = []
+        #print("nr_sections in this batch:", nr_sections)
+        #print(section_input_ids.size())
+        #print(section_attention_mask.size())
+        for nr in range(nr_sections):
+            #print("nr", nr)
+            input_ids = section_input_ids[:,nr,:]
+            #print(input_ids.size())
+            attention_mask = section_attention_mask[:,nr,:]
+            #print(attention_mask.size())
+            out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+            hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
+            #print(hidden_state_cls.size())
+            sections_out.append(hidden_state_cls)
+        sections_out = torch.stack(sections_out, dim=1) # (batchsize, sections, 768)
+        #print(sections_out)
+        #print("section_out", sections_out.size())
+
+        # now an rnn over all section_out per section
+        #print(sections_out.permute(1,0,2).size())
+        output, hidden_state_last_timestep = self.rnn(sections_out.permute(1,0,2))
+        #print("output", output.size())
+        #print("hidden_state_last_timestep", hidden_state_last_timestep.size())
+        hidden_state_last_timestep = hidden_state_last_timestep.permute(1,0,2)
+        stacked = hidden_state_last_timestep.reshape(hidden_state_last_timestep.size()[0], -1) # (batch_size, ...)
+        #print("stacked", stacked.size())
+        concatenated = torch.cat([stacked, textlength], dim=1)
+        #print("concat", concatenated.size())
+
+        out = self.out(concatenated)
+        #print("out", out.size())
+
+
+
+        #section_sum = torch.sum(sections_out, dim=1)
+        #print(section_sum)
+        #print(section_sum.size())
+        #concatenated = torch.cat([section_sum, textlength], dim=1)
+        #print(concatenated)
+        #print(concatenated.size()) # just the "textlength" sum and the texlength
+
+        #out = self.out(concatenated)
+
+        return out
+
+
+
+
+
+
+
+######
+###### CNN Versuche
+######
 
 
 # (fast) identisch nachgebaut wie hier https://chriskhanhtran.github.io/posts/cnn-sentence-classification/
@@ -203,29 +401,6 @@ class CNN_textlength(nn.Module):
         return out
 
 
-class baseline_textlength(nn.Module):
-    """an FFN with JUST textlength
-    """
-
-    def __init__(self, n_outputs):
-        super(baseline_textlength, self).__init__()
-
-        self.LReLU = nn.LeakyReLU(0.01)
-        self.dropout = nn.Dropout(p=0.3)
-
-        self.fc1 = nn.Linear(1, 32)
-        self.fc2 = nn.Linear(32, 64)
-        self.fc3 = nn.Linear(64, 32)
-        self.out = nn.Linear(32, n_outputs)
-
-    def forward(self, textlength):
-        out_fc1 = self.dropout(self.LReLU(self.fc1(textlength)))
-        out_fc2 = self.dropout(self.LReLU(self.fc2(out_fc1)))
-        out_fc3 = self.dropout(self.LReLU(self.fc3(out_fc2)))
-        out = self.out(out_fc3)
-
-        return out
-
 
 
 # class BERT_textlength(nn.Module):
@@ -260,254 +435,6 @@ class baseline_textlength(nn.Module):
 #         out = self.ffn(concatenated)
 #
 #         return out
-
-
-class BERT_textlength_Sequence(nn.Module):
-    """
-    here: BertForSequenceClassification (directly logits) instead of BertModel
-    BERT output logits concatenated with textlength
-    """
-
-    def __init__(self, n_outputs):
-        super(BERT_textlength_Sequence, self).__init__()
-
-        self.bert = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                                                  num_labels=n_outputs,
-                                                                  output_attentions=False,
-                                                                  output_hidden_states=True)
-
-        self.ffn = nn.Sequential(nn.Linear(2, 10),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(10, 5),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(5, n_outputs)
-                                 )
-
-    def forward(self, input_ids, attention_mask, textlength):
-        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        out_bert_logit = out_bert[0] # logits, wenn BertForSequenceClassification
-
-        concatenated = torch.cat([out_bert_logit, textlength], dim=1)
-        out = self.ffn(concatenated)
-
-        return out
-
-
-class BERT_textlength_baseline(nn.Module):
-    """
-    here: BertModel
-    pooled BERT output with FFN,
-    output then concatenated with textlength, then FFN
-    """
-
-    def __init__(self, n_outputs):
-        super(BERT_textlength_baseline, self).__init__()
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                              output_attentions = False,
-                                              output_hidden_states = True)
-
-        self.bert_ffn = nn.Sequential(nn.Linear(768, 256),  #768 (Bert)
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(256, 128),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(128, 64),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(64, 1)
-                                 )
-
-        self.ffn = nn.Sequential(nn.Linear(2, 10),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(10, 5),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(5, n_outputs)
-                                 )
-
-    def forward(self, input_ids, attention_mask, textlength):
-        out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
-
-        out_bert_ffn = self.bert_ffn(hidden_state_cls)
-
-        concatenated = torch.cat([out_bert_ffn, textlength], dim=1)
-        out = self.ffn(concatenated)
-
-        return out
-
-
-class BERT_hierarchical(nn.Module):
-    """
-    split text in chunks of <=512 tokens and combine outputs somehow
-    """
-
-    def __init__(self, n_outputs, max_sect = 5):
-        super(BERT_hierarchical, self).__init__()
-        self.max_sect = max_sect
-        # self.bert = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
-        #                                                           num_labels=n_outputs,
-        #                                                           output_attentions=False,
-        #                                                           output_hidden_states=True) # je nachdem, was man will
-
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                              output_attentions = False,
-                                              output_hidden_states = False)
-
-        self.weight_vector = torch.nn.Parameter(torch.ones(self.max_sect), requires_grad=True) # learnable weight vector for weighted sum of section outputs
-
-        ## Das hier ist nötig, wenn man selbstständig mit dem last hidden state vom CLS-Token weitermacht
-        ## (Bert-Model statt BertForSequencrClassification)
-        self.bert_ffn = nn.Sequential(nn.Linear(768, 256),  #768 (Bert)
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(256, 128),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(128, 64),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(64, n_outputs)
-                                 )
-
-        self.ffn = nn.Sequential(nn.Linear(2, 10),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(10, 5),
-                                 nn.LeakyReLU(0.01),
-                                 nn.Dropout(p=0.3),
-                                 nn.Linear(5, n_outputs)
-                                 )
-
-    def forward(self, section_input_ids, section_attention_mask, textlength):
-        # Sven meint: hier so tun als wäre input shape (max_sect, Bert-Ids) also  batch ignorieren
-        batch_size = section_input_ids.size()[0]
-        nr_sections = section_input_ids.size()[1]
-        sections_out_dummy = torch.zeros(batch_size, self.max_sect, 1,
-                                         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')) # to be filled (batch_size, max_sect, 1)
-        #sections_out = []
-
-        ### Sven meint so: (das klappt aber nicht, die "zwei zu ignorierenden Dimensionen" scheinen zu stören
-        #out_bert = self.bert(input_ids = section_input_ids, attention_mask = section_attention_mask)
-        #section_out = out_bert[0]
-        #print("Sven section out", section_out)
-
-        for nr in range(nr_sections):
-            input_ids = section_input_ids[:,nr,:]
-            #input_ids = section_input_ids[nr,:]
-
-            attention_mask = section_attention_mask[:,nr,:]
-            #attention_mask = section_attention_mask[nr,:]
-
-            #print(attention_mask.size())
-            out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-
-            ### wenn BertModel:
-            hidden_state_cls = out_bert[1]  # pooled output wenn BertModel (hidden state of first token with some modifications)
-            section_out = self.bert_ffn(hidden_state_cls)
-
-            ### wenn BertForSequenceClassification:
-            ###section_out = out_bert[0] # das sind die logits wenn bert = BertForSequenceClassification
-
-            sections_out_dummy[:,nr,:] = section_out
-            #sections_out_dummy[nr,:] = section_out
-            #sections_out.append(section_out)
-
-        #sections_out = torch.stack(sections_out, dim=1)
-        sections_out = sections_out_dummy
-
-        ###section_sum = torch.sum(sections_out, dim=1) # this would be normal sum WITHOUT weighting
-
-        section_sum = torch.sum(sections_out.squeeze(2)*self.weight_vector, dim=1).unsqueeze(1)
-        ## deprecated: (does the same but is complicated)
-        ##weight_matrix = self.weight_vector.repeat(1,batch_size).view(batch_size, self.max_sect).unsqueeze(1)
-        ##section_sum_b = torch.bmm(weight_matrix, sections_out).squeeze(1)
-
-        concatenated = torch.cat([section_sum, textlength], dim=1)
-        out = self.ffn(concatenated)
-
-        return out
-
-
-class BERT_hierarchical_RNN(nn.Module):
-    """
-    split text in chunks of <=512 tokens and combine outputs somehow
-    """
-
-    def __init__(self, n_outputs):
-        super(BERT_hierarchical_RNN, self).__init__()
-        self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
-                                              output_attentions = False,
-                                              output_hidden_states = True)
-
-        #self.rnn = nn.RNN(768, 264, 2) # TODO: wieviele layers? welche hidden size?
-        self.rnn = nn.GRU(768, 264, 2) # auch mal ausprobieren?
-        #self.rnn = nn.LSTM(768, 264, 2)
-
-        self.out = nn.Sequential(nn.Linear(529, 128), # 2*264 + 1
-                                  nn.LeakyReLU(0.01),
-                                  nn.Dropout(p=0.3),
-                                  nn.Linear(128, 64),
-                                  nn.LeakyReLU(0.01),
-                                  nn.Dropout(p=0.3),
-                                  nn.Linear(64, n_outputs)
-                                  )
-
-    def forward(self, section_input_ids, section_attention_mask, textlength):
-        nr_sections = section_input_ids.size()[1]
-        sections_out = []
-        #print("nr_sections in this batch:", nr_sections)
-        #print(section_input_ids.size())
-        #print(section_attention_mask.size())
-        for nr in range(nr_sections):
-            #print("nr", nr)
-            input_ids = section_input_ids[:,nr,:]
-            #print(input_ids.size())
-            attention_mask = section_attention_mask[:,nr,:]
-            #print(attention_mask.size())
-            out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-            hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
-            #print(hidden_state_cls.size())
-            sections_out.append(hidden_state_cls)
-        sections_out = torch.stack(sections_out, dim=1) # (batchsize, sections, 768)
-        #print(sections_out)
-        #print("section_out", sections_out.size())
-
-        # now an rnn over all section_out per section
-        #print(sections_out.permute(1,0,2).size())
-        output, hidden_state_last_timestep = self.rnn(sections_out.permute(1,0,2))
-        #print("output", output.size())
-        #print("hidden_state_last_timestep", hidden_state_last_timestep.size())
-        hidden_state_last_timestep = hidden_state_last_timestep.permute(1,0,2)
-        stacked = hidden_state_last_timestep.reshape(hidden_state_last_timestep.size()[0], -1) # (batch_size, ...)
-        #print("stacked", stacked.size())
-        concatenated = torch.cat([stacked, textlength], dim=1)
-        #print("concat", concatenated.size())
-
-        out = self.out(concatenated)
-        #print("out", out.size())
-
-
-
-        #section_sum = torch.sum(sections_out, dim=1)
-        #print(section_sum)
-        #print(section_sum.size())
-        #concatenated = torch.cat([section_sum, textlength], dim=1)
-        #print(concatenated)
-        #print(concatenated.size()) # just the "textlength" sum and the texlength
-
-        #out = self.out(concatenated)
-
-        return out
-
-
-
-
-
 
 
 
@@ -698,3 +625,97 @@ class FFN_BERTFeatures(nn.Module):
 #                                                                        output_attentions=False,
 #                                                                        output_hidden_states=False)
 
+
+
+
+
+
+
+# class MyBertModel(BertModel):
+#
+#     @classmethod
+#     def from_pretrained(cls):
+#         return super().from_pretrained(PRE_TRAINED_MODEL_NAME,
+#                                               output_attentions=False,
+#                                               output_hidden_states=True)
+
+# class LayerBert(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME,
+#                                               output_attentions=False,
+#                                               output_hidden_states=True)
+#     def forward(self, x):
+#         return self.bert(x)
+
+
+# class LayerBertSequence(nn.Module):
+#     def __init__(self, n_outputs):
+#         super().__init__()
+#         self.bertSequence = BertForSequenceClassification.from_pretrained(PRE_TRAINED_MODEL_NAME,
+#                                                                   num_labels = n_outputs,
+#                                                                   output_attentions = False,
+#                                                                   output_hidden_states = False)
+#     def forward(self, x):
+#         return self.bertSequence(x)
+
+
+
+
+
+
+# class LayerBertOut(nn.Module):
+#     def __init__(self, n_outputs):
+#         super().__init__()
+#         # self.bert_ffn = nn.Sequential(nn.Linear(768, 256),  # 768 (Bert hidden state size)
+#         #                      nn.LeakyReLU(0.01),
+#         #                      nn.Dropout(p=0.3),
+#         #                      nn.Linear(256, 128),
+#         #                      nn.LeakyReLU(0.01),
+#         #                      nn.Dropout(p=0.3),
+#         #                      nn.Linear(128, 64),
+#         #                      nn.LeakyReLU(0.01),
+#         #                      nn.Dropout(p=0.3),
+#         #                      nn.Linear(64, n_outputs)
+#         #                      )
+#         self.bert_ffn = nn.Sequential(nn.Linear(768, 256),  # 768 (Bert hidden state size)
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(256, 64),
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(64, n_outputs)
+#                              )
+#
+#     def forward(self, x):
+#         return self.bert_ffn(x)
+
+
+# class LayerFFN(nn.Module):
+#     def __init__(self, n_outputs):
+#         super().__init__()
+#         self.ffn = nn.Sequential(nn.Linear(2, 10),
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(10, 5),
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(5, n_outputs)
+#                              )
+#     def forward(self, x):
+#         return self.ffn(x)
+
+
+# class LayerBertTextlength(nn.Module):
+#     def __init__(self, n_outputs):
+#         super().__init__()
+#         self.ffn = nn.Sequential(nn.Linear(769, 10),
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(10, 5),
+#                              nn.LeakyReLU(0.01),
+#                              nn.Dropout(p=0.3),
+#                              nn.Linear(5, n_outputs)
+#                              )
+#     def forward(self, x):
+#         return self.ffn(x)

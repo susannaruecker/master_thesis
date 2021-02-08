@@ -74,7 +74,7 @@ preprocessor = utils.Preprocessor(lemmatize=False,
 
 
 # get data
-full = utils.get_raw_df()
+full = utils.get_full_df()
 df = full
 df = df[df.publisher == "NOZ"]
 df = df[df.nr_tokens_text >= 100]

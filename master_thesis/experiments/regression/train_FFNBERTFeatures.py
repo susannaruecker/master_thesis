@@ -24,7 +24,7 @@ tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 model.to(device)
 
-full = utils.get_raw_df()
+full = utils.get_full_df()
 df = full
 df = df[df.publisher == "NOZ"]
 df = df.sample(frac=0.2, replace=False, random_state=1) # take 20% for faster processing # TODO: change back

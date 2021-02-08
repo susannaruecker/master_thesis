@@ -57,7 +57,7 @@ analyzer = jemas.Analyzer(lex = lex,
                           neutral = neutral,
                           preprocessor = preprocessor)
 
-df_full = utils.get_raw_df()
+df_full = utils.get_full_df()
 #df_full.set_index('articleId', inplace=True)
 
 # new df with emotional variables as columns

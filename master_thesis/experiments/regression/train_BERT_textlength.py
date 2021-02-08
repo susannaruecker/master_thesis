@@ -16,7 +16,12 @@ import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
 ##TODO: Das unterdrückt Warnungen vom Tokenizer, also mit Vorsicht zu genießen
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("device", help="specify which device to use ('cpu' or 'gpu')", type=str)
+args = parser.parse_args()
+
+device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
 # get pretrained model and tokenizer from huggingface's transformer library
@@ -46,7 +51,10 @@ PUBLISHER = 'NOZ' #'NOZ'
 identifier = f"BERT_textlength_baseline_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
 # setting up Tensorboard
-tensorboard_path = f'runs_{TARGET}/{identifier}'
+if args.device == 'cpu':
+    tensorboard_path = f'debugging/{identifier}'
+else:
+    tensorboard_path = f'runs_{TARGET}/{identifier}'
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
@@ -111,11 +119,9 @@ def evaluate_model(model):
             pred.extend(outputs)
             true.extend(targets)
 
-    rand_int = np.random.randint(low=0, high=len(pred) - 20)
-
     print("Inspecting some predicted and their true values:")
-    print("predicted:", [round(t.item(), 2) for t in pred[rand_int:rand_int + 10]])
-    print("true:", [round(t.item(), 2) for t in true[rand_int:rand_int + 10]])
+    print("predicted:", [round(t.item(), 2) for t in pred[:10]])
+    print("true:", [round(t.item(), 2) for t in true[:10]])
 
     return {'Pearson': st.pearsonr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),

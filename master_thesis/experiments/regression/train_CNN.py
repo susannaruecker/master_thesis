@@ -13,7 +13,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
 # get data (already conditionend on min_pageviews etc)
-full = utils.get_raw_df()
+full = utils.get_full_df()
 df = full[full.txtExists == True]
 df = df[df.nr_tokens_publisher >= 70]
 df = df[df.zeilen >= 10]
