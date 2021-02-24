@@ -2,7 +2,6 @@
 
 from master_thesis.src import utils, data
 
-import pandas as pd
 import numpy as np
 import scipy.stats as st
 from sklearn.linear_model import Ridge
@@ -36,9 +35,6 @@ def mean_baseline(publisher, target):
     print("predicting dev set")
     pred_dev = np.full(len(y_dev), mean_train)
 
-    # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    pred_dev[pred_dev < 0] = 0
-
     # Pearson's r and MSE as evaluation metric
     print("target:", target)
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
@@ -68,9 +64,9 @@ def textlength_baseline(publisher, target):
     print(df_train.shape, df_dev.shape, df_test.shape)
 
     # features
-    X_train = np.array(df_train['nr_tokens_text'])
-    X_dev = np.array(df_dev['nr_tokens_text'])
-    X_test = np.array(df_test['nr_tokens_text'])
+    X_train = np.array(df_train['nr_tokens_text_BERT'])   #     X_train = np.array(df_train['nr_tokens_text'])
+    X_dev = np.array(df_dev['nr_tokens_text_BERT'])       #     X_dev = np.array(df_dev['nr_tokens_text'])
+    X_test = np.array(df_test['nr_tokens_text_BERT'])     #     X_test = np.array(df_test['nr_tokens_text'])
 
     # define labels
     y_train = np.array(df_train[target])
@@ -88,9 +84,6 @@ def textlength_baseline(publisher, target):
     # predict for dev set
     print("predicting dev set")
     pred_dev = model.predict(X_dev.reshape(-1, 1))
-
-    # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    pred_dev[pred_dev < 0] = 0
 
     # Pearson's r and MSE as evaluation metric
     print("target:", target)
@@ -129,7 +122,14 @@ textlength_baseline(publisher = PUBLISHER,
 # RAE: 98.51
 
 ### textlength_baseline:
+## with "normal" textlength:
 # Pearson:  0.39
 # MSE:  17832.166
 # MAE:  63.931
 # RAE: 89.702
+
+## with BERT_tokens:
+# Pearson: 0.38
+# MSE: 18057.853
+# MAE: 64.635
+# RAE: 90.689

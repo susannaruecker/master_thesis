@@ -5,10 +5,9 @@
 import torch
 from torch import optim, nn
 from transformers import BertTokenizer
+from transformers.optimization import AdamW
 from torch.utils.data import DataLoader
 import numpy as np
-import scipy.stats as st
-from sklearn.metrics import mean_squared_error, mean_absolute_error
 from torch.utils.tensorboard import SummaryWriter
 from master_thesis.src import utils, data, models
 import logging
@@ -26,49 +25,49 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-#MODEL = 'BertSequence'
+MODEL = 'BertSequence'
 #MODEL = 'BertFFN'
-MODEL = 'BertAveraging'
+#MODEL = 'BertAveraging'
 
 
 if MODEL == 'BertSequence':
     model = models.BertSequence(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 elif MODEL == 'BertFFN':
     model = models.BertFFN(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 elif MODEL == 'BertAveraging':
     model = models.BertAveraging(n_outputs=1)
-    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 
 model.to(device)
 
 # HYPERPARAMETERS
-EPOCHS = 25
-BATCH_SIZE = 5
-FIXED_LEN = 512 # (e.g. 400 or 512)
+EPOCHS = 30
+GPU_BATCH = 32 # what can actually be done in one go on the GPU
+BATCH_SIZE = 32 # nr of samples before update step
+FIXED_LEN = 128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
-START = 0 # random, if MAX_LEN is specified you probably want to start at 0
-LR = 0.00001 # normalerweise immer 1e5 # war auch mal 1e-6
+START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
+LR = 1e-5
 FRACTION = 1
 
 TARGET = 'avgTimeOnPage'
 PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
+starting_time = utils.get_timestamp()
 identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
 # setting up Tensorboard
 if args.device == 'cpu':
-    tensorboard_path = f'debugging/{identifier}'
+    tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
 else:
-    tensorboard_path = f'runs_{TARGET}/{identifier}'
+    tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
+    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
+
 writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
-# for saving model after each epoch
-model_path = utils.OUTPUT / 'saved_models' / f'{identifier}'
 
 # DataSets and DataLoaders
 
@@ -80,133 +79,139 @@ ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTI
 ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
 print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
 
-dl_train = DataLoader(ds_train, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater)
-dl_dev = DataLoader(ds_dev, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
-dl_test = DataLoader(ds_test, batch_size=BATCH_SIZE, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
+dl_train = DataLoader(ds_train, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater)
+dl_dev = DataLoader(ds_dev, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
+dl_test = DataLoader(ds_test, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
 
 
 # have a look at one batch in dl_train to see if shapes make sense
-data = next(iter(dl_train))
-print(data.keys())
-input_ids = data['input_ids']
+d = next(iter(dl_train))
+print(d.keys())
+input_ids = d['input_ids']
 #print(input_ids)
 print(input_ids.shape)
-attention_mask = data['attention_mask']
+attention_mask = d['attention_mask']
 #print(attention_mask)
 print(attention_mask.shape)
-print(data['target'].shape)
+print(d['target'].shape)
+
+
+writer.add_graph(model=model, input_to_model=[input_ids.to(device), attention_mask.to(device)])
 
 
 # loss and optimizer
-optimizer = optim.AdamW(model.parameters(), lr=LR)
+if MODEL == "BertSequence":
+    optimizer = optim.AdamW(model.parameters(), lr=LR) #todo: was ist der Unterschied zwischen pytorch's AdamW und from transformers.optimization import  AdamW
+    #optimizer = AdamW(model.parameters(), lr=LR, eps=1e-8, weight_decay=0.01)
+if MODEL in ["BertFFN", "BertAveraging"]:
+    optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
+    optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
+    #optimizer_bert = AdamW(model.bert.parameters(), lr=LR, eps=1e-8, weight_decay=0.01)
+    #optimizer_ffn = AdamW(model.ffn.parameters(), lr=1e-3, eps=1e-8, weight_decay=0.01)
+
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
 
-### helper function for EVALUATING on dev whenever we want
-def evaluate_model(model):
-    print("evaluating")
-    #model = model.eval()
-    model.eval()
-    eval_losses = []
-
-    pred = []  # for calculating Pearson's r on dev
-    true = []
-
-    with torch.no_grad():
-        for nr, d in enumerate(dl_dev):
-            print("-Batch", nr, end='\r')
-            input_ids = d["input_ids"].to(device)
-            attention_mask = d["attention_mask"].to(device)
-            targets = d["target"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            #print(outputs[:10])
-            loss = loss_fn(outputs, targets)
-            eval_losses.append(loss.item())
-
-            outputs = outputs.squeeze().cpu()
-            targets = targets.squeeze().cpu()
-            pred.extend(outputs)
-            true.extend(targets)
-
-    return {'Pearson': st.pearsonr(pred, true)[0],
-            'MSE': mean_squared_error(pred, true),
-            'MAE': mean_absolute_error(pred, true),
-            'RAE': utils.relative_absolute_error(np.array(pred), np.array(true)),
-            'eval_loss': np.mean(eval_losses)}
-
-
-batch_count = 0
+nr_samples = 0 # counts globally (X-axis for tensorboard etc)
+sample_count = 0 # counts up to >=BATCH_SIZE, then update step and back to 0
+last_written = 0 # store when last writing/evaluating took place
+last_eval = 0
 running_loss = []
+min_eval_loss = float("inf") # initialize with infinity
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
 
-    ### TRAINING on train
-    print("training")
-    #model = model.train()
     model.train()
     train_losses = []
 
     for nr, d in enumerate(dl_train):
-        print("-Batch", nr, end='\r')
-        batch_count += 1
+        len_minibatch = len(d["target"])
+        nr_samples += len_minibatch # "globally"
+        sample_count += len_minibatch # up to BATCH_SIZE
+        print("-Sample", nr_samples, end='\r')
 
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         targets = d["target"].to(device)
-        # print(targets.shape)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-        #print(outputs[:5])
-        # print(outputs.shape)
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
         running_loss.append(loss.item())
         loss.backward()
 
-        if batch_count % 5 == 0: # update only every 5 batches (gradient accumulation) --> simulating bigger "batch size"
-            optimizer.step()
-            optimizer.zero_grad()
+        if sample_count >= BATCH_SIZE: # after >BATCH_SIZE samples: update step
+            if MODEL == "BertSequence":
+                optimizer.step()
+                optimizer.zero_grad()
+            if MODEL in ["BertFFN", "BertAveraging"]:
+                optimizer_bert.step()
+                optimizer_ffn.step()
+                optimizer_bert.zero_grad()
+                optimizer_ffn.zero_grad()
 
-        if batch_count % 100 == 0: # every 100 batches: write to tensorboard
-            print(f"running train loss at batch {batch_count} (mean over last {len(running_loss)}):", np.mean(running_loss))
-            # log the running train loss to tensorboard
-            writer.add_scalar('train loss', np.mean(running_loss), batch_count)
+            sample_count = 0
+
+        if nr_samples-last_written >= 200: # every >200 samples: write train loss to tensorboard
+            print(f"running train loss at sample {nr_samples}:", np.mean(running_loss))
+            writer.add_scalar('train loss', np.mean(running_loss), nr_samples)
             running_loss = []
+            last_written = nr_samples
 
-        if batch_count % 500 == 0: # every 300 batches: evaluate
-            # EVALUATE
-            eval_rt = evaluate_model(model = model)
+        if nr_samples-last_eval >= 3000: # every >1000 samples: evaluate
+            print("----- start evaluating -----")
+            eval_rt = data.evaluate_model(model = model, dl = dl_dev, loss_fn=loss_fn,
+                                          using=args.device, max_batch=None)
+            last_eval = nr_samples
             # log eval loss and pearson to tensorboard
             print("Mean eval loss:", eval_rt['eval_loss'])
             print("Pearson's r on dev set:", eval_rt['Pearson'])
+            print("Spearman's r on dev set:", eval_rt['Spearman'])
             print("MSE on dev set:", eval_rt['MSE'])
             print("MAE on dev set:", eval_rt['MAE'])
             print("RAE on dev set:", eval_rt['RAE'])
 
-            writer.add_scalar('eval loss', eval_rt['eval_loss'], batch_count)
-            writer.add_scalar('Pearson', eval_rt['Pearson'], batch_count)
-            writer.add_scalar('MSE', eval_rt['MSE'], batch_count)
-            writer.add_scalar('MAE', eval_rt['MAE'], batch_count)
-            writer.add_scalar('RAE', eval_rt['RAE'], batch_count)
+            writer.add_scalar('eval loss', eval_rt['eval_loss'], nr_samples)
+            writer.add_scalar('Pearson', eval_rt['Pearson'], nr_samples)
+            writer.add_scalar('Spearman', eval_rt['Spearman'], nr_samples)
+            writer.add_scalar('MSE', eval_rt['MSE'], nr_samples)
+            writer.add_scalar('MAE', eval_rt['MAE'], nr_samples)
+            writer.add_scalar('RAE', eval_rt['RAE'], nr_samples)
 
-            # model = model.train() # make sure it is back to train mode
-            model.train()
+            # save checkpoint if loss is smaller than before:
+            if eval_rt['eval_loss'] <= min_eval_loss:
+                print(f"New best state ({eval_rt['eval_loss']}), saving model, optimizer, epoch, sample_count, ... to ", model_path)
+                if MODEL =="BertSequence":
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'running_loss': running_loss,
+                        'nr_samples': nr_samples,
+                        'last_eval': last_eval,
+                        'last_written': last_written
+                        }, model_path)
 
-    print("Mean train loss epoch:", np.mean(train_losses))
+                if MODEL in ["BertFFN", "BertAveraging"]:
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_bert_state_dict': optimizer_bert.state_dict(),
+                        'optimizer_ffn_state_dict': optimizer_ffn.state_dict(),
+                        'running_loss': running_loss,
+                        'nr_samples': nr_samples,
+                        'last_eval': last_eval,
+                        'last_written': last_written
+                        }, model_path)
+                min_eval_loss = eval_rt['eval_loss']
+
+            model.train() # make sure model is back to train mode
+            print("----- done evaluating -----")
+
+    print(f"Mean train loss epoch {epoch}:", np.mean(train_losses))
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
-
-    print("saving model, optimizer, epoch, batch_count to", model_path)
-    # torch.save(model.state_dict(), model_path)
-
-    torch.save({
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'running_loss': running_loss,
-        'batch_count': batch_count
-    }, model_path)
 
 
 print("FIXED_LEN: ", FIXED_LEN)
@@ -214,5 +219,6 @@ print("MIN_LEN: ", MIN_LEN)
 print("START: ", START)
 print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
+print("GPU_BATCH: ", GPU_BATCH)
 print("LR: ", LR)
 

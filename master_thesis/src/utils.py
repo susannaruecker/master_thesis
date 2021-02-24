@@ -15,6 +15,7 @@ import os
 import os.path
 from scipy.stats import percentileofscore
 import torch
+from datetime import datetime
 
 
 
@@ -25,6 +26,7 @@ META = ROOT / 'Dokumentation_Daten.txt'
 
 PROJECT_ROOT = Path(__file__).parents[2].resolve()
 OUTPUT = PROJECT_ROOT / 'master_thesis' / 'outputs' # to save tsv files and other stuff
+TENSORBOARD = PROJECT_ROOT / 'master_thesis' / 'experiments'/ 'regression'
 
 def get_original_df(publ): # just the KPI tables, no text or token counts etc.
     path_original = ROOT / 'original'
@@ -255,6 +257,12 @@ def percentile_transform(column):
 def relative_absolute_error(pred, true):
     rae = np.sum(abs(pred-true)) / np.sum(abs(true-np.mean(true)))
     return rae*100
+
+
+def get_timestamp():
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d_%H:%M:%S")
+    return timestamp
 
 
 def get_time_class(row, min, max):
@@ -658,6 +666,6 @@ def get_Vo():
     return lex
 
 
-if __name__ == "__main__":
-    test = get_conditioned_df()
-    print(test.time_class.value_counts())
+#if __name__ == "__main__":
+#    test = get_conditioned_df()
+#    print(test.time_class.value_counts())

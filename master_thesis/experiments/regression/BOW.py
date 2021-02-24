@@ -70,6 +70,10 @@ def train_BOW_model(publisher = 'NOZ',
         np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_abs_{str(max_features)}.npy', X_dev)
         np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_abs_{str(max_features)}.npy', X_test)
 
+        # saving vectorizer (for inference and for having feature_names)
+        with open(utils.OUTPUT / 'BOW_features' / f'{publisher}_vectorizer_{str(max_features)}.pkl', "wb") as fp:
+            pickle.dump(vectorizer, fp)
+
         if feature_type == 'abs':
             X_train, X_dev, X_test = X_train, X_dev, X_test
 
@@ -155,7 +159,7 @@ train_BOW_model(publisher = PUBLISHER,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
                 create_or_load ='create',
-                max_features = 1000, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                max_features = 1000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
                 text_base = 'article_text', #'teaser', #'text_preprocessed',
                 target = TARGET
                 )

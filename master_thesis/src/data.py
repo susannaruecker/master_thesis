@@ -2,8 +2,11 @@ import torch
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 import numpy as np
-from master_thesis.src import utils
+from master_thesis.src import utils, models
 import json
+import scipy.stats as st
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
 
 import logging
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
@@ -123,6 +126,8 @@ class TransformBERT(object):
 
         sample['input_ids'] = input_ids
         sample['attention_mask'] = attention_mask
+        sample['BERT_tokens'] = torch.tensor(original_len, dtype=torch.float) # original textlength in BERT tokens
+
 
         return sample
 
@@ -163,6 +168,7 @@ class CollaterBERT():
         batch_attention_mask = [ x['attention_mask'].clone() for x in samples]
         batch_target = [ x['target'].clone() for x in samples ]
         batch_textlength = [ x['textlength'].clone() for x in samples ]
+        batch_BERT_tokens = [ x['BERT_tokens'].clone() for x in samples ]
         batch_publisher = [ x['publisher'].clone() for x in samples ]
         batch_articleId = [ x['articleId'] for x in samples ]
 
@@ -192,6 +198,7 @@ class CollaterBERT():
         batch['attention_mask'] = batch_attention_mask
         batch['target'] = torch.tensor(batch_target, dtype=torch.float).unsqueeze(dim=-1)
         batch['textlength'] = torch.tensor(batch_textlength, dtype=torch.float).unsqueeze(dim=-1)
+        batch['BERT_tokens'] = torch.tensor(batch_BERT_tokens, dtype=torch.float).unsqueeze(dim=-1)
         batch['publisher'] = torch.tensor(batch_publisher, dtype=torch.float).unsqueeze(dim=-1)
         batch['articleId'] = batch_articleId
 
@@ -253,6 +260,7 @@ class CollaterBERT_hierarchical():
         batch_attention_mask = [ x['attention_mask'].clone() for x in samples]
         batch_target = [ x['target'].clone() for x in samples ]
         batch_textlength = [ x['textlength'].clone() for x in samples ]
+        batch_BERT_tokens = [ x['BERT_tokens'].clone() for x in samples ]
         batch_publisher = [ x['publisher'].clone() for x in samples ]
         batch_articleId = [ x['articleId'] for x in samples ]
 
@@ -292,10 +300,79 @@ class CollaterBERT_hierarchical():
         batch['section_attention_mask'] = batch_section_attention_mask
         batch['target'] = torch.tensor(batch_target, dtype=torch.float).unsqueeze(dim=-1)
         batch['textlength'] = torch.tensor(batch_textlength, dtype=torch.float).unsqueeze(dim=-1)
+        batch['BERT_tokens'] = torch.tensor(batch_BERT_tokens, dtype=torch.float).unsqueeze(dim=-1)
         batch['publisher'] = torch.tensor(batch_publisher, dtype=torch.float).unsqueeze(dim=-1)
         batch['articleId'] = batch_articleId
 
         return batch
+
+
+#### for evaluating the DL models during training ###
+# todo: write the values in some kind of log?
+def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
+    if using == "cpu":
+        device = torch.device('cpu')
+    if using == "gpu":
+        device = torch.device('cuda')
+    model.eval()
+    eval_losses = []
+
+    pred = []  # for calculating Pearson's r on dev
+    true = []
+
+    with torch.no_grad():
+        for nr, d in enumerate(dl):
+            print("-Batch", nr, end='\r')
+            targets = d["target"].to(device)
+            if model.__class__ in [models.BertTextlength]:
+                input_ids = d["input_ids"].to(device)
+                attention_mask = d["attention_mask"].to(device)
+                textlength = d["BERT_tokens"].to(device)
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength = textlength)
+            elif model.__class__ in [models.BertHierarchical]:
+                textlength = d["BERT_tokens"].to(device)
+                section_input_ids = d["section_input_ids"].to(device)
+                section_attention_mask = d["section_attention_mask"].to(device)
+                outputs = model(section_input_ids=section_input_ids,
+                                section_attention_mask=section_attention_mask,
+                                textlength=textlength)
+            elif model.__class__ in [models.baseline_textlength]:
+                textlength = d["BERT_tokens"].to(device)
+                outputs = model(textlength = textlength)
+            else:
+                input_ids = d["input_ids"].to(device)
+                attention_mask = d["attention_mask"].to(device)
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+
+            loss = loss_fn(outputs, targets)
+            eval_losses.append(loss.item())
+
+            outputs = outputs.squeeze().cpu()
+            targets = targets.squeeze().cpu()
+            if len(d["target"]) == 1:  # necessary if BATCH_SIZE = 1
+                pred.append(outputs)
+                true.append(targets)
+            else:
+                pred.extend(outputs)
+                true.extend(targets)
+
+            if max_batch:
+                if nr >= max_batch:
+                    break
+
+    print("Inspecting some predicted and their true values:")
+    print("- pred:", [round(t.item(), 2) for t in pred[:10]])
+    print("- true:", [round(t.item(), 2) for t in true[:10]])
+    print("- MEAN and STD of predicted values:", np.mean(pred), np.std(pred))
+
+    print("- Length of dataset used to evaluate:", len(pred))
+
+    return {'Pearson': st.pearsonr(pred, true)[0],
+            'Spearman': st.spearmanr(pred, true)[0],
+            'MSE': mean_squared_error(pred, true),
+            'MAE': mean_absolute_error(pred, true),
+            'RAE': utils.relative_absolute_error(np.array(pred), np.array(true)),
+            'eval_loss': np.mean(eval_losses)}
 
 
 

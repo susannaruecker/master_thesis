@@ -6,17 +6,28 @@ from sklearn.linear_model import Ridge
 import pickle
 import scipy.stats as st
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+import json
 import pandas as pd
 
 
-def train_Embs_model(df,
-                     preprocessor,
+def train_Embs_model(preprocessor,
                      embs,
+                     publisher = 'NOZ',
                      text_base = 'article_text',
                      target = 'avgTimeOnPage'
                      ):
-    # create splits
-    df_train, df_dev, df_test = data.create_train_dev_test(df=df, random_seed=123)
+    df = utils.get_publisher_df(publisher)
+
+    with open(utils.OUTPUT / "splits" / f"{publisher}_splits.json", "r") as f:
+        splits = json.load(f)
+        train_IDs = splits["train"]
+        dev_IDs = splits["dev"]
+        test_IDs = splits["test"]
+
+    df_train = df.loc[train_IDs]
+    df_dev = df.loc[dev_IDs]
+    df_test = df.loc[test_IDs]
+
     print(df_train.shape, df_dev.shape, df_test.shape)
 
     # get features (averaged vector of all tokens in text)
@@ -49,7 +60,7 @@ def train_Embs_model(df,
     pred_dev = model.predict(X_dev)
 
     # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    pred_dev[pred_dev < 0] = 0
+    #pred_dev[pred_dev < 0] = 0
 
     # Pearson's r and MSE as evaluation metric
     print("text_base:", text_base)
@@ -57,6 +68,11 @@ def train_Embs_model(df,
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
     print("MSE: ", mean_squared_error(pred_dev, y_dev))
     print("MAE: ", mean_absolute_error(pred_dev, y_dev))
+    print("RAE:", utils.relative_absolute_error(pred_dev, y_dev))
+
+    # print some predictions
+    print("true:", [p.round(2) for p in y_dev[:10]])
+    print("pred:", [p.round(2) for p in pred_dev[:10]])
 
     # saving model with pickle
     target_path = utils.OUTPUT / 'saved_models' / 'Embs.pkl'
@@ -64,7 +80,7 @@ def train_Embs_model(df,
 
 embs = utils.load_fasttext_vectors(limit = None)
 
-preprocessor = utils.Preprocessor(lemmatize=False,
+preprocessor = utils.Preprocessor(lemmatize=True,
                                   delete_stopwords=True,
                                   delete_punctuation=True)
 
@@ -73,26 +89,24 @@ preprocessor = utils.Preprocessor(lemmatize=False,
 #                                   embs = embs)
 
 
-# get data
-full = utils.get_full_df()
-df = full
-df = df[df.publisher == "NOZ"]
-df = df[df.nr_tokens_text >= 100]
-df = df[df.nr_tokens_text <= 3000]
-df = df[df.avgTimeOnPagePerWordcount <= 3]
-
-df = df.sample(frac=1, replace=False, random_state=1) # take 20% for faster processing # TODO: change back
-print(df.head())
-print("size of used df:", df.shape)
-
-train_Embs_model(df = df,
+train_Embs_model(publisher = "NOZ",
                  preprocessor = preprocessor,
                  embs = embs,
                  text_base = 'article_text',
                  target = 'avgTimeOnPage')
 
-# NOZ
-#Feature shapes:  (28345, 300) (3543, 300) (3544, 300)
-#Pearson:  (0.4296870832032937, 3.5177741192007336e-159)
-#MSE:  14363.834765683527
-#MAE:  65.05144926248634
+
+
+# NOZ (aktuell)
+
+# lemmatize=False, delete_stopwords=True, delete_punctuation=True)
+# Pearson: 0.39
+# MSE: 16551.1
+# MAE: 67.8
+# RAE: 95.1
+
+# lemmatize=True, delete_stopwords=True, delete_punctuation=True)
+# Pearson: 0.39
+# MSE: 17152.6
+# MAE: 68.6
+# RAE: 96.3
