@@ -79,6 +79,19 @@ def get_FFN(n_outputs, nr_layers = 2, input_size = 768, p_drop = 0.3):
     return ffn
 
 
+class EmbsFFN(nn.Module):
+    """
+    input: document embedding vector (averageds word embs or BERT) --> FFN
+    input_size: size of input vector (fastText: 300, BERT: 768)
+    """
+    def __init__(self, input_size, n_outputs):
+        super(EmbsFFN, self).__init__()
+        self.ffn = get_FFN(n_outputs=n_outputs, input_size=input_size, nr_layers=2)
+
+    def forward(self, vector):
+        out = self.ffn(vector)
+        return out
+
 
 ##### multiple ways of Bert baseline (no textlength) #####
 

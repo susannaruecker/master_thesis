@@ -1,7 +1,9 @@
 import torch
 from torch.utils.data import Dataset
+from transformers import BertTokenizer
 from sklearn.model_selection import train_test_split
 import numpy as np
+import pandas as pd
 from master_thesis.src import utils, models
 import json
 import scipy.stats as st
@@ -128,6 +130,105 @@ class TransformBERT(object):
         sample['attention_mask'] = attention_mask
         sample['BERT_tokens'] = torch.tensor(original_len, dtype=torch.float) # original textlength in BERT tokens
 
+        return sample
+
+
+class TransformDAN(object):
+    def __init__(self, embs, preprocessor):
+        self.embs = embs
+        self.preprocessor = preprocessor
+        self.fastText_Embs = pd.read_csv(utils.OUTPUT / 'Embs_features' / f'Embs_features_NOZ_full.tsv',
+                       sep='\t', index_col="articleId") # already saved Embs for NOZ
+
+    def __call__(self, sample):
+        # this would do them "from scratch"
+        #text = sample['text']
+        #doc_embedding = utils.get_averaged_vector(text = text, preprocessor = self.preprocessor, embs = self.embs)
+        #sample['doc_embedding'] = torch.tensor(doc_embedding, dtype=torch.float)
+
+        # quicker: look up embeddings (there already exists a df for NOZ)
+        sample['doc_embedding'] = torch.tensor(self.fastText_Embs.loc[sample["articleId"]])
+
+        return sample
+
+
+class TransformBertFeatures(object):
+    def __init__(self, tokenizer, keep_all= False, start=None, fixed_len=None, min_len = 200):
+        self.fixed_len = fixed_len
+        self.keep_all = keep_all
+        self.start = start
+        self.min_len = min_len
+        self.tokenizer = tokenizer
+        self.BERT_embs = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_NOZ_full.tsv',
+                       sep='\t', index_col="articleId") # todo: these are the ones with max_len = 128 !!!
+
+    def __call__(self, sample):
+        text = sample['text']
+
+        encoding = self.tokenizer.encode_plus(text,
+                                              max_length=None,
+                                              truncation=False,
+                                              return_token_type_ids=False,
+                                              pad_to_max_length=False,
+                                              return_attention_mask=True,
+                                              return_tensors='pt',
+                                              )
+
+        input_ids = encoding['input_ids'].flatten()
+        attention_mask = encoding['attention_mask'].flatten()
+
+        original_len = len(input_ids)
+        #print("original len:", original_len)
+        if self.fixed_len:
+            window_len = self.fixed_len
+        elif self.min_len:
+            window_len = np.random.randint(low=self.min_len, high=512)  # random window size between 200 and 510
+        else:
+            window_len = original_len
+
+        if window_len > original_len:  # just in case text is shorter
+            window_len = original_len  # take the original text length
+
+        #print("window len", window_len)
+
+        if self.start is not None:
+            start = self.start
+        elif original_len == window_len:
+            start = 0
+        else:
+            start = np.random.randint(low=0, high=original_len - window_len)  # start shouldn't be too late
+        end = start + window_len
+
+        if self.keep_all == True: # ignore everything and take all!
+            start = 0
+            window_len = original_len
+
+        end = start + window_len
+        input_ids = input_ids[start:end]
+        attention_mask = attention_mask[start:end]
+
+        # make sure that special cls-token and end-token are there, even after transform (makes sense?)
+        input_ids[0] = self.tokenizer.cls_token_id
+        input_ids[-1] = self.tokenizer.sep_token_id
+        attention_mask[0] = 1
+        attention_mask[-1] = 1
+
+        # get the document embedding (hidden state of CLS-token):
+
+        if self.fixed_len == 128:
+            # quicker: look up embeddings (there already exists a df with the Bert Embeddings (max_len = 128):
+            sample['doc_embedding'] = torch.tensor(self.BERT_embs.loc[sample["articleId"]])
+
+        else:
+            model = models.BERT_embedding()
+            #device = torch.device("cuda")
+            device = torch.device("cpu")
+
+            model.to(device)
+            model.eval()
+            with torch.no_grad():
+                doc_embedding = model(input_ids=input_ids.unsqueeze(0), attention_mask=attention_mask.unsqueeze(0))
+            sample['doc_embedding'] = doc_embedding.squeeze()
 
         return sample
 
@@ -339,10 +440,13 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
             elif model.__class__ in [models.baseline_textlength]:
                 textlength = d["BERT_tokens"].to(device)
                 outputs = model(textlength = textlength)
-            else:
+            elif model.__class__ in [models.BertFFN, models.BertSequence, models.BertAveraging]:
                 input_ids = d["input_ids"].to(device)
                 attention_mask = d["attention_mask"].to(device)
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            elif model.__class__ in [models.EmbsFFN]:
+                vector = d["doc_embedding"]
+                outputs = model(vector = vector)
 
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())

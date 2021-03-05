@@ -25,10 +25,10 @@ print('Using device:', device)
 
 # HYPERPARAMETERS
 EPOCHS = 100
-GPU_BATCH = 4 # what can actually be done in one go on the GPU
+GPU_BATCH = 1 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 128 # 250 #todo: change back to 150 or higher?
-MAX_SECT = 8
+SECTION_SIZE = 400 #todo: change back to 150 or higher?
+MAX_SECT = 6
 
 LR = 1e-5
 MASK_WORDS = False
@@ -39,8 +39,8 @@ PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
 starting_time = utils.get_timestamp()
-#identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
-identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_pretrained_BertFFN"
+identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
+#identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_pretrained_BertFFN"
 
 # setting up Tensorboard
 if args.device == 'cpu':
@@ -101,15 +101,15 @@ loss_fn = nn.MSELoss()  # mean squared error
 
 ### NEW: loading checkpoint (specific layer weights) from bert baseline
 
-checkpoint_path = utils.OUTPUT / 'saved_models' / 'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
+#checkpoint_path = utils.OUTPUT / 'saved_models' / 'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
 #checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_textlength_baseline_FIXLEN250_MINLENNone_START0_EP30_BS15_LR1e-05_avgTimeOnPage_NOZ'
 
-model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
+#model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
 
 # this compares with the model architecture and deletes/copies over if necessary:
-model_state_dict = utils.modify_state_dict(sd_source=model_state_dict, sd_target=model.state_dict())
-model.load_state_dict(model_state_dict, strict=True)
-print("done with loading checkpoint")
+#model_state_dict = utils.modify_state_dict(sd_source=model_state_dict, sd_target=model.state_dict())
+#model.load_state_dict(model_state_dict, strict=True)
+#print("done with loading checkpoint")
 
 
 
@@ -120,8 +120,7 @@ sample_count = 0 # counts up to >=BATCH_SIZE, then update step and back to 0
 last_written = 0 # store when last writing/evaluating took place
 last_eval = 0
 running_loss = []
-min_eval_loss = float("inf") # initialize with infinity
-
+max_pearson = 0
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -192,9 +191,9 @@ for epoch in range(EPOCHS):
 
             print("weight_vector values now:", model.weight_vector.data)
 
-            # save checkpoint if loss is smaller than before:
-            if eval_rt['eval_loss'] <= min_eval_loss:
-                print(f"New best state ({eval_rt['eval_loss']}), saving model, optimizer, epoch, sample_count, ... to ",
+            # save checkpoint if Pearson is bigger than before:
+            if eval_rt['Pearson'] >= max_pearson:
+                print(f"New best state ({eval_rt['Pearson']}), saving model, optimizer, epoch, sample_count, ... to ",
                       model_path)
                 torch.save({
                     'epoch': epoch,
@@ -207,7 +206,7 @@ for epoch in range(EPOCHS):
                     'last_eval': last_eval,
                     'last_written': last_written
                 }, model_path)
-                min_eval_loss = eval_rt['eval_loss']
+                max_pearson = eval_rt['Pearson']
 
             model.train()  # make sure model is back to train mode
             print("----- done evaluating -----")

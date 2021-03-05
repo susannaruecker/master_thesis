@@ -78,24 +78,38 @@ def train_Embs_model(preprocessor,
     target_path = utils.OUTPUT / 'saved_models' / 'Embs.pkl'
     pickle.dump(model, open(target_path, 'wb'))
 
-embs = utils.load_fasttext_vectors(limit = None)
-
-preprocessor = utils.Preprocessor(lemmatize=True,
-                                  delete_stopwords=True,
-                                  delete_punctuation=True)
-
-#example = utils.get_averaged_vector("Haus und Hof.",
-#                                   preprocessor = preprocessor,
-#                                   embs = embs)
 
 
-train_Embs_model(publisher = "NOZ",
-                 preprocessor = preprocessor,
-                 embs = embs,
-                 text_base = 'article_text',
-                 target = 'avgTimeOnPage')
+
+if __name__ == "__main__":
+
+    embs = utils.load_fasttext_vectors(limit = None)
+    preprocessor = utils.Preprocessor(lemmatize=True,
+                                      delete_stopwords=True,
+                                      delete_punctuation=True)
+
+    #example = utils.get_averaged_vector("Haus und Hof.",
+    #                                   preprocessor = preprocessor,
+    #                                   embs = embs)
 
 
+    #train_Embs_model(publisher = "NOZ",
+    #                 preprocessor = preprocessor,
+    #                 embs = embs,
+    #                 text_base = 'article_text',
+    #                 target = 'avgTimeOnPage')
+
+    PUBLISHER = "NOZ"
+    full = utils.get_publisher_df(PUBLISHER)
+
+    X = np.array([utils.get_averaged_vector(text, preprocessor=preprocessor, embs=embs) for text in full["article_text"]])
+
+    X_fastText = pd.DataFrame(data = X, index = full.index, columns = range(300)) # for saving document embeddings
+    print(X_fastText.head())
+    print(X_fastText.shape)
+
+    X_fastText.to_csv(utils.OUTPUT / 'Embs_features' / f'Embs_features_{PUBLISHER}_full.tsv',
+                 sep ='\t', index_label="articleId")
 
 # NOZ (aktuell)
 

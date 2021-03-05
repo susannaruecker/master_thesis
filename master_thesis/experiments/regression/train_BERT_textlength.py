@@ -34,9 +34,9 @@ model.to(device)
 
 # HYPERPARAMETERS
 EPOCHS = 40
-GPU_BATCH = 32 # what can actually be done in one go on the GPU
+GPU_BATCH = 4# 32 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-FIXED_LEN = 128 #512
+FIXED_LEN = 512 # 128
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 LR = 1e-5
@@ -103,7 +103,7 @@ sample_count = 0 # counts up to >=BATCH_SIZE, then update step and back to 0
 last_written = 0 # store when last writing/evaluating took place
 last_eval = 0
 running_loss = []
-min_eval_loss = float("inf") # initialize with infinity
+max_pearson = 0 # initialize max_pearson
 
 
 for epoch in range(EPOCHS):
@@ -168,9 +168,9 @@ for epoch in range(EPOCHS):
             writer.add_scalar('MAE', eval_rt['MAE'], nr_samples)
             writer.add_scalar('RAE', eval_rt['RAE'], nr_samples)
 
-            # save checkpoint if loss is smaller than before:
-            if eval_rt['eval_loss'] <= min_eval_loss:
-                print(f"New best state ({eval_rt['eval_loss']}), saving model, optimizer, epoch, sample_count, ... to ",
+            # save checkpoint if Pearson is bigger than before:
+            if eval_rt['Pearson'] >= max_pearson:
+                print(f"New best state ({eval_rt['Pearson']}), saving model, optimizer, epoch, sample_count, ... to ",
                       model_path)
                 torch.save({
                     'epoch': epoch,
@@ -182,7 +182,7 @@ for epoch in range(EPOCHS):
                     'last_eval': last_eval,
                     'last_written': last_written
                     }, model_path)
-                min_eval_loss = eval_rt['eval_loss']
+                max_pearson = eval_rt['Pearson']
 
             model.train()  # make sure model is back to train mode
             print("----- done evaluating -----")

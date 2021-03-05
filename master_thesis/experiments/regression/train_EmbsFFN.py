@@ -22,45 +22,72 @@ args = parser.parse_args()
 device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
-# get pretrained model and tokenizer from huggingface's transformer library
-PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
+MODEL = 'DANFastText'
+#MODEL = 'BertEmbs'
 
-#MODEL = 'BertSequence'
-MODEL = 'BertFFN'
-#MODEL = 'BertAveraging'
-
-
-if MODEL == 'BertSequence':
-    model = models.BertSequence(n_outputs=1)
-elif MODEL == 'BertFFN':
-    model = models.BertFFN(n_outputs=1)
-elif MODEL == 'BertAveraging':
-    model = models.BertAveraging(n_outputs=1)
-
-tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-
-model.to(device)
 
 # HYPERPARAMETERS
-EPOCHS = 30
-GPU_BATCH = 4 # what can actually be done in one go on the GPU
+EPOCHS = 60
+GPU_BATCH = 32 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-FIXED_LEN = 512 #128 #512
+FIXED_LEN = 128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
-LR = 1e-5
+LR = 1e-3
 FRACTION = 1
 
 TARGET = 'avgTimeOnPage'
 PUBLISHER = 'NOZ'
 
-# building identifier from hyperparameters (for Tensorboard and saving model)
+# for including in identifier
 starting_time = utils.get_timestamp()
-identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
+
+# DataSets and DataLoaders
+
+if MODEL == 'DANFastText':
+    identifier = f"{MODEL}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
+
+    embs = utils.load_fasttext_vectors(limit=1000) # now only dummy because using saved dataframe
+    preprocessor = utils.Preprocessor(lemmatize=True,
+                                      delete_stopwords=True,
+                                      delete_punctuation=True)
+    model = models.EmbsFFN(n_outputs=1, input_size=300)
+    transform = data.TransformDAN(embs = embs, preprocessor=preprocessor) # document embedding: averaged word embeddings
+
+    ds_train = data.PublisherDataset(publisher=PUBLISHER, set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+    ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
+    ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
+    print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
+
+    dl_train = DataLoader(ds_train, batch_size=GPU_BATCH, num_workers=0, shuffle=True)
+    dl_dev = DataLoader(ds_dev, batch_size=GPU_BATCH, num_workers=0, shuffle=True, drop_last=True)
+    dl_test = DataLoader(ds_test, batch_size=GPU_BATCH, num_workers=0, shuffle=True, drop_last=True)
+
+
+elif MODEL == 'BertEmbs':
+    identifier = f"{MODEL}_FIXLEN{FIXED_LEN}_MINLEN{MIN_LEN}_START{START}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
+
+    # get pretrained model and tokenizer from huggingface's transformer library
+    PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
+    model = models.EmbsFFN(n_outputs=1, input_size=768)
+    tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
+    transform = data.TransformBertFeatures(tokenizer=tokenizer, min_len=MIN_LEN, start=START, fixed_len=FIXED_LEN) # document embedding: last hidden state of CLS-token
+
+    ds_train = data.PublisherDataset(publisher=PUBLISHER, set="train", fraction=FRACTION, target=TARGET, text_base="article_text", transform=transform)
+    ds_dev = data.PublisherDataset(publisher=PUBLISHER, set="dev", fraction=FRACTION, target=TARGET, text_base="article_text", transform=transform)
+    ds_test = data.PublisherDataset(publisher=PUBLISHER, set="test", fraction=FRACTION, target=TARGET, text_base="article_text", transform=transform)
+    print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
+
+    dl_train = DataLoader(ds_train, batch_size=GPU_BATCH, num_workers=0, shuffle=False, drop_last=False)
+    dl_dev = DataLoader(ds_dev, batch_size=GPU_BATCH, num_workers=0, shuffle=False, drop_last=False)
+    dl_test = DataLoader(ds_test, batch_size=GPU_BATCH, num_workers=0, shuffle=False, drop_last=False)
+
 
 # setting up Tensorboard
 if args.device == 'cpu':
     tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
+    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
+
 else:
     tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
     model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
@@ -69,46 +96,18 @@ writer = SummaryWriter(tensorboard_path)
 print(f"logging with Tensorboard to path {tensorboard_path}")
 
 
-# DataSets and DataLoaders
-
-transform = data.TransformBERT(tokenizer = tokenizer, start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
-collater = data.CollaterBERT()
-
-ds_train = data.PublisherDataset(publisher=PUBLISHER, set = "train", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
-ds_dev = data.PublisherDataset(publisher=PUBLISHER, set = "dev", fraction=FRACTION, target = TARGET, text_base = "article_text", transform = transform)
-ds_test = data.PublisherDataset(publisher=PUBLISHER, set = "test", fraction=FRACTION, target  = TARGET, text_base = "article_text", transform = transform)
-print("Length of used DataSets:", len(ds_train), len(ds_dev), len(ds_test))
-
-dl_train = DataLoader(ds_train, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater)
-dl_dev = DataLoader(ds_dev, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
-dl_test = DataLoader(ds_test, batch_size=GPU_BATCH, num_workers=0, shuffle=True, collate_fn=collater, drop_last=True)
+model.to(device)
 
 
 # have a look at one batch in dl_train to see if shapes make sense
 d = next(iter(dl_train))
 print(d.keys())
-input_ids = d['input_ids']
-#print(input_ids)
-print(input_ids.shape)
-attention_mask = d['attention_mask']
-#print(attention_mask)
-print(attention_mask.shape)
+print(d['doc_embedding'].shape)
 print(d['target'].shape)
 
 
-writer.add_graph(model=model, input_to_model=[input_ids.to(device), attention_mask.to(device)])
-
-
 # loss and optimizer
-if MODEL == "BertSequence":
-    optimizer = optim.AdamW(model.parameters(), lr=LR) #todo: was ist der Unterschied zwischen pytorch's AdamW und from transformers.optimization import  AdamW
-    #optimizer = AdamW(model.parameters(), lr=LR, eps=1e-8, weight_decay=0.01)
-if MODEL in ["BertFFN", "BertAveraging"]:
-    optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)
-    optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
-    #optimizer_bert = AdamW(model.bert.parameters(), lr=LR, eps=1e-8, weight_decay=0.01)
-    #optimizer_ffn = AdamW(model.ffn.parameters(), lr=1e-3, eps=1e-8, weight_decay=0.01)
-
+optimizer = optim.AdamW(model.parameters(), lr=LR) #todo: was ist der Unterschied zwischen pytorch's AdamW und from transformers.optimization import  AdamW
 loss_fn = nn.MSELoss()  # mean squared error
 
 ##### TRAINING AND EVALUATING #####
@@ -118,7 +117,7 @@ sample_count = 0 # counts up to >=BATCH_SIZE, then update step and back to 0
 last_written = 0 # store when last writing/evaluating took place
 last_eval = 0
 running_loss = []
-max_pearson = 0
+max_pearson = 0 # initialize max_pearson
 
 for epoch in range(EPOCHS):
     print("Epoch", epoch)
@@ -131,11 +130,9 @@ for epoch in range(EPOCHS):
         nr_samples += len_minibatch # "globally"
         sample_count += len_minibatch # up to BATCH_SIZE
         print("-Sample", nr_samples, end='\r')
-
-        input_ids = d["input_ids"].to(device)
-        attention_mask = d["attention_mask"].to(device)
         targets = d["target"].to(device)
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        vector = d["doc_embedding"]
+        outputs = model(vector=vector)
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())
@@ -143,15 +140,8 @@ for epoch in range(EPOCHS):
         loss.backward()
 
         if sample_count >= BATCH_SIZE: # after >BATCH_SIZE samples: update step
-            if MODEL == "BertSequence":
-                optimizer.step()
-                optimizer.zero_grad()
-            if MODEL in ["BertFFN", "BertAveraging"]:
-                optimizer_bert.step()
-                optimizer_ffn.step()
-                optimizer_bert.zero_grad()
-                optimizer_ffn.zero_grad()
-
+            optimizer.step()
+            optimizer.zero_grad()
             sample_count = 0
 
         if nr_samples-last_written >= 200: # every >200 samples: write train loss to tensorboard
@@ -183,28 +173,16 @@ for epoch in range(EPOCHS):
             # save checkpoint if Pearson is bigger than before:
             if eval_rt['Pearson'] >= max_pearson:
                 print(f"New best state ({eval_rt['Pearson']}), saving model, optimizer, epoch, sample_count, ... to ", model_path)
-                if MODEL =="BertSequence":
-                    torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'running_loss': running_loss,
-                        'nr_samples': nr_samples,
-                        'last_eval': last_eval,
-                        'last_written': last_written
-                        }, model_path)
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'running_loss': running_loss,
+                    'nr_samples': nr_samples,
+                    'last_eval': last_eval,
+                    'last_written': last_written
+                    }, model_path)
 
-                if MODEL in ["BertFFN", "BertAveraging"]:
-                    torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_bert_state_dict': optimizer_bert.state_dict(),
-                        'optimizer_ffn_state_dict': optimizer_ffn.state_dict(),
-                        'running_loss': running_loss,
-                        'nr_samples': nr_samples,
-                        'last_eval': last_eval,
-                        'last_written': last_written
-                        }, model_path)
                 max_pearson = eval_rt['Pearson']
 
             model.train() # make sure model is back to train mode
@@ -214,9 +192,6 @@ for epoch in range(EPOCHS):
     writer.add_scalar('train loss epoch', np.mean(train_losses), epoch)
 
 
-print("FIXED_LEN: ", FIXED_LEN)
-print("MIN_LEN: ", MIN_LEN)
-print("START: ", START)
 print("EPOCHS: ", EPOCHS)
 print("BATCH SIZE: ", BATCH_SIZE)
 print("GPU_BATCH: ", GPU_BATCH)

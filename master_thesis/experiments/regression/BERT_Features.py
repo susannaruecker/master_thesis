@@ -124,6 +124,11 @@ if __name__ == "__main__":
     X_test_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_test.tsv',
                        sep='\t', index_col="articleId")
 
+    # concatenate and save them
+    #X_full_df = pd.concat([X_train_df, X_dev_df, X_test_df])
+    #X_full_df.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_full.tsv',
+    #             sep='\t', index_label="articleId")
+
     # convert to numpy
     X_train, X_dev, X_test = np.array(X_train_df), np.array(X_dev_df), np.array(X_test_df)
     print("Features shape:", X_train.shape, X_dev.shape, X_test.shape)

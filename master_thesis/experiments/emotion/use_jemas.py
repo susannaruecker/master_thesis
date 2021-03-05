@@ -3,8 +3,8 @@
 import sys
 sys.path.append('/home/ruecker/workspace')
 
-#import os
-#sys.path.append(os.getcwd()) # for slurm?
+import os
+sys.path.append(os.getcwd()) # for slurm?
 
 from jemas4py.jemas.src import jemas
 from master_thesis.src import utils
@@ -57,11 +57,10 @@ analyzer = jemas.Analyzer(lex = lex,
                           neutral = neutral,
                           preprocessor = preprocessor)
 
-df_full = utils.get_full_df()
-#df_full.set_index('articleId', inplace=True)
-
+NOZ = utils.get_publisher_df(("NOZ"))
 # new df with emotional variables as columns
-df = df_full.copy()
+NOZ = NOZ["article_text", "avgTimeOnPage"]
+df = NOZ.copy()
 for v in vars:
     df[v] = np.nan
 
