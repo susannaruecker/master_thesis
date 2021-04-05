@@ -20,7 +20,7 @@ parser.add_argument("device", help="specify which device to use ('cpu' or 'gpu')
 args = parser.parse_args()
 
 
-def create_features():
+def create_features(FIXED_LEN = 128):
 
     device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
     print('Using device:', device)
@@ -34,11 +34,11 @@ def create_features():
 
     PUBLISHER = "NOZ"
     START = 0
-    FIXED_LEN = 128
+    FIXED_LEN = FIXED_LEN
     MIN_LEN = None
     FRACTION = 1
     TARGET = "avgTimeOnPage"
-    GPU_BATCH = 500
+    GPU_BATCH = 100 #500
 
     transform = data.TransformBERT(tokenizer = tokenizer, start = START, fixed_len = FIXED_LEN, min_len= MIN_LEN)
     collater = data.CollaterBERT()
@@ -71,7 +71,6 @@ def create_features():
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
             articleId = d['articleId']
-            targets = d["target"].to(device)
             embedding = model(input_ids=input_ids, attention_mask=attention_mask)
             embedding = embedding.cpu()
             for i, emb in enumerate(embedding):
@@ -80,7 +79,7 @@ def create_features():
             #    break
 
         print("done with train, saving X_train")
-        X_train.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_train.tsv',
+        X_train.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_train_FIXLEN{FIXED_LEN}.tsv',
                        sep = '\t', index_label = "articleId")
 
         for nr, d in enumerate(dl_dev):
@@ -88,12 +87,11 @@ def create_features():
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
             articleId = d['articleId']
-            targets = d["target"].to(device)
             embedding = model(input_ids=input_ids, attention_mask=attention_mask)
             for i, emb in enumerate(embedding):
                 X_dev.loc[articleId[i]] = emb.cpu()
         print("done with dev, saving X_dev")
-        X_dev.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_dev.tsv',
+        X_dev.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_dev_FIXLEN{FIXED_LEN}.tsv',
                        sep='\t', index_label="articleId")
 
         for nr, d in enumerate(dl_test):
@@ -101,33 +99,33 @@ def create_features():
             input_ids = d["input_ids"].to(device)
             attention_mask = d["attention_mask"].to(device)
             articleId = d['articleId']
-            targets = d["target"].to(device)
             embedding = model(input_ids=input_ids, attention_mask=attention_mask)
             for i, emb in enumerate(embedding):
                 X_test.loc[articleId[i]] = emb.cpu()
         print("done with test, saving X_test")
-        X_test.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_test.tsv',
+        X_test.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_test_FIXLEN{FIXED_LEN}.tsv',
                        sep='\t', index_label="articleId")
 
 
 if __name__ == "__main__":
 
-    # only one time...
-    #create_features()
+    # only necessary one time for the fixed len...
+    FIXED_LEN = 512
+    create_features(FIXED_LEN = 512)
 
     # load features
     PUBLISHER = "NOZ"
-    X_train_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_train.tsv',
+    X_train_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_train_FIXLEN{FIXED_LEN}.tsv',
                        sep='\t', index_col="articleId")
-    X_dev_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_dev.tsv',
+    X_dev_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_dev_FIXLEN{FIXED_LEN}.tsv',
                        sep='\t', index_col="articleId")
-    X_test_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_test.tsv',
+    X_test_df = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_test_FIXLEN{FIXED_LEN}.tsv',
                        sep='\t', index_col="articleId")
 
     # concatenate and save them
-    #X_full_df = pd.concat([X_train_df, X_dev_df, X_test_df])
-    #X_full_df.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_full.tsv',
-    #             sep='\t', index_label="articleId")
+    X_full_df = pd.concat([X_train_df, X_dev_df, X_test_df])
+    X_full_df.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_full_FIXLEN{FIXED_LEN}.tsv',
+                 sep='\t', index_label="articleId")
 
     # convert to numpy
     X_train, X_dev, X_test = np.array(X_train_df), np.array(X_dev_df), np.array(X_test_df)
@@ -170,13 +168,20 @@ if __name__ == "__main__":
     print("pred:", [p.round(2) for p in pred_dev[:10]])
 
     # saving model with pickle
-    #target_path = utils.OUTPUT / 'saved_models' / 'BERT_features.pkl'
-    #pickle.dump(model, open(target_path, 'wb'))
+    target_path = utils.OUTPUT / 'saved_models' / f'BERT_features_FIXLEN{FIXED_LEN}.pkl'
+    pickle.dump(model, open(target_path, 'wb'))
 
 # NOZ (erste 128 Tokens)
 # Pearson:  (0.4271697683726695, 2.62008033037408e-161)
 # MSE:  16001.888120996331
 # MAE:  70.85979305771858
 # RAE: 99.42258413583295
+
+# NOZ (erste 512 Tokens)
+# TODO
+# Pearson: 0.514
+# MSE: 14379
+# MAE: 66.5
+# RAE: 93.3
 
 

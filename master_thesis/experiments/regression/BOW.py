@@ -7,16 +7,18 @@ import numpy as np
 import nltk
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import Ridge
+import xgboost
 import scipy.stats as st
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import pickle
 import json
 
 
-def train_BOW_model(publisher = 'NOZ',
+def train_BOW_model(classifier = "ridge",
+                    publisher = 'NOZ',
                     preprocessor = None,
                     feature_type = 'abs',
-                    create_or_load = 'create',
+                    load = True,
                     max_features = 500,
                     text_base = 'article_text',
                     target = 'avgTimeOnPage'
@@ -36,8 +38,14 @@ def train_BOW_model(publisher = 'NOZ',
 
     print(df_train.shape, df_dev.shape, df_test.shape)
 
-    if create_or_load == 'create':
-        print("creating features", feature_type)
+    if load == True:
+        print("loading features...")
+        X_train = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_abs_{str(max_features)}.npy')
+        X_dev = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_abs_{str(max_features)}.npy')
+        X_test = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_abs_{str(max_features)}.npy')
+
+    else:
+        print("creating features...")
         print("max_features = ", max_features)
 
         # stopwords
@@ -74,40 +82,40 @@ def train_BOW_model(publisher = 'NOZ',
         with open(utils.OUTPUT / 'BOW_features' / f'{publisher}_vectorizer_{str(max_features)}.pkl', "wb") as fp:
             pickle.dump(vectorizer, fp)
 
-        if feature_type == 'abs':
-            X_train, X_dev, X_test = X_train, X_dev, X_test
+    if feature_type == 'abs':
+        print("using absolute frequency")
+        X_train, X_dev, X_test = X_train, X_dev, X_test
 
-        if feature_type == 'rel':
-            # convert to relative frequencies #TODO: Achtung, hier kann Division durch 0 auftreten, wie damit umgehen?
-            X_train_rel = X_train/X_train.sum(axis=1, keepdims=True)
-            X_dev_rel = X_dev/X_dev.sum(axis=1, keepdims=True)
-            X_test_rel = X_test/X_test.sum(axis=1, keepdims=True)
+    if feature_type == 'rel':
+        print("using relative frequency")
+        # convert to relative frequencies #TODO: Achtung, hier kann Division durch 0 auftreten, wie damit umgehen?
+        X_train_rel = X_train/X_train.sum(axis=1, keepdims=True)
+        X_dev_rel = X_dev/X_dev.sum(axis=1, keepdims=True)
+        X_test_rel = X_test/X_test.sum(axis=1, keepdims=True)
 
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_rel_{str(max_features)}.npy', X_train_rel)
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_rel_{str(max_features)}.npy', X_dev_rel)
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_rel_{str(max_features)}.npy', X_test_rel)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_rel_{str(max_features)}.npy', X_train_rel)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_rel_{str(max_features)}.npy', X_dev_rel)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_rel_{str(max_features)}.npy', X_test_rel)
 
-            X_train, X_dev, X_test = X_train_rel, X_dev_rel, X_test_rel
+        X_train, X_dev, X_test = X_train_rel, X_dev_rel, X_test_rel
 
-        if feature_type == 'bool':
-            # convert to binary values
-            X_train_bool = X_train > 0
-            X_dev_bool = X_dev > 0
-            X_test_bool = X_test > 0
+    if feature_type == 'bin':
+        print("using binary frequency (present or not)")
 
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_bool_{str(max_features)}.npy', X_train_bool)
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_bool_{str(max_features)}.npy', X_dev_bool)
-            np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_bool_{str(max_features)}.npy', X_test_bool)
+        # convert to binary values
+        X_train_bool = X_train > 0
+        X_dev_bool = X_dev > 0
+        X_test_bool = X_test > 0
 
-            X_train, X_dev, X_test = X_train_bool, X_dev_bool, X_test_bool
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_bool_{str(max_features)}.npy', X_train_bool)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_bool_{str(max_features)}.npy', X_dev_bool)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_bool_{str(max_features)}.npy', X_test_bool)
 
-    if create_or_load == 'load':
-        print("loading features...", feature_type)
-        X_train = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_{feature_type}_{str(max_features)}.npy')
-        X_dev = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_{feature_type}_{str(max_features)}.npy')
-        X_test = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_{feature_type}_{str(max_features)}.npy')
+        X_train, X_dev, X_test = X_train_bool, X_dev_bool, X_test_bool
+
 
     print("Feature shapes: ", X_train.shape, X_dev.shape, X_test.shape)
+    print(X_train[:3])
 
     # define labels
     y_train = np.array(df_train[target])
@@ -116,12 +124,22 @@ def train_BOW_model(publisher = 'NOZ',
 
     print("Labels shape: ", y_train.shape, y_dev.shape, y_test.shape)
 
-    # model: Ridge Regression
-    model = Ridge()
+    if classifier == "ridge":
+        model = Ridge()
+
+    if classifier == "xgboost":
+        model = xgboost.XGBRegressor(n_estimators = 800,
+                                     learning_rate = 0.1,
+                                     max_depth = 20,
+                                     #verbosity=2
+                                     random_state = 1
+                                     )
+
+    print("using model:", model)
 
     print("training model...")
     model.fit(X_train, y_train)
-
+    print("fitted model:", model)
     # predict for dev set
     print("predicting dev set")
     pred_dev = model.predict(X_dev)
@@ -142,7 +160,7 @@ def train_BOW_model(publisher = 'NOZ',
     print("pred:", [ p.round(2) for p in pred_dev[:10] ])
 
     # saving model with pickle
-    target_path = utils.OUTPUT / 'saved_models' / f'BOW_{feature_type}_{str(max_features)}.pkl'
+    target_path = utils.OUTPUT / 'saved_models' / f'BOW_{classifier}_{feature_type}_{str(max_features)}.pkl'
     pickle.dump(model, open(target_path, 'wb'))
 
 
@@ -155,11 +173,12 @@ PUBLISHER = 'NOZ'
 # preprocessor
 preprocessor = utils.Preprocessor(delete_stopwords=True, lemmatize=True, delete_punctuation=False)
 
-train_BOW_model(publisher = PUBLISHER,
+train_BOW_model(classifier= "ridge",
+                publisher = PUBLISHER,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
-                create_or_load ='create',
-                max_features = 1000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                load = False,
+                max_features = 50000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
                 text_base = 'article_text', #'teaser', #'text_preprocessed',
                 target = TARGET
                 )
@@ -189,3 +208,8 @@ train_BOW_model(publisher = PUBLISHER,
 # 500: Pearson:  0.47, MSE:  15171.37, MAE:  65.71, RAE: 92.201
 # 200: Pearson:  0.45, MSE:  15498.22, MAE:  65.13, RAE: 91.386
 # 1000: Pearson:  0.48, MSE:  15163.24, MAE:  66.56, RAE: 93.392
+
+# xgboost
+# 500: Pearson: 0.48
+# 1000: Pearson: 0.47
+# 10000: Pearson: 0.49

@@ -581,11 +581,8 @@ def get_averaged_vector(text, preprocessor, embs):
 
 # feature extraction for CNN: matrix with embedding of tokens, padded/trimmed to fixed_len if given
 def get_embedding_matrix(text, tokenizer, embs, start = 0, fixed_length=None, min_len = 200):
-    if tokenizer is None: # use default (spacy) tokenizer
-        nlp = spacy.load("de_core_news_sm", disable=['parser', 'ner'])
-        tokenizer = nlp.Defaults.create_tokenizer(nlp)
-        tokens = tokenizer(text)
-        tokens = [ t.text for t in tokens ] # spacy returns objects, not tokens directly
+    if tokenizer is None: # use default tokenizer
+        tokens = nltk.word_tokenize(text)
     else: # if another tokenizer is given
         tokens = tokenizer(text)
 

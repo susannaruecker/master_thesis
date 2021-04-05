@@ -25,10 +25,10 @@ print('Using device:', device)
 
 # HYPERPARAMETERS
 EPOCHS = 100
-GPU_BATCH = 1 # what can actually be done in one go on the GPU
+GPU_BATCH = 4 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 400 #todo: change back to 150 or higher?
-MAX_SECT = 6
+SECTION_SIZE = 128 #todo: smaller or bigger?
+MAX_SECT = 8 #todo: more or less?
 
 LR = 1e-5
 MASK_WORDS = False
@@ -39,18 +39,8 @@ PUBLISHER = 'NOZ'
 
 # building identifier from hyperparameters (for Tensorboard and saving model)
 starting_time = utils.get_timestamp()
-identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
-#identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_pretrained_BertFFN"
+identifier = f"BertHierarchical_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_weighted_mean"
 
-# setting up Tensorboard
-if args.device == 'cpu':
-    tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
-else:
-    tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
-    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
-
-writer = SummaryWriter(tensorboard_path)
-print(f"logging with Tensorboard to path {tensorboard_path}")
 
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
@@ -93,24 +83,36 @@ print("BERT_tokens:", d['BERT_tokens'])
 
 # loss and optimizer
 optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR)
-optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
-optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=1e-3)
+optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-4)
+optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=1e-4)
 
 loss_fn = nn.MSELoss()  # mean squared error
 
+LOAD_CHECKPOINT = True # True
+if LOAD_CHECKPOINT == True:
+    print("using pretrained weights from a BERT baseline")
+    identifier = identifier + '_pretrained'
+    ### NEW: loading checkpoint (specific layer weights) from a BERT baseline
 
-### NEW: loading checkpoint (specific layer weights) from bert baseline
+    checkpoint_path = utils.OUTPUT / 'saved_models' / \
+                      'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'
 
-#checkpoint_path = utils.OUTPUT / 'saved_models' / 'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
-#checkpoint_path = utils.OUTPUT / 'saved_models' / 'BERT_textlength_baseline_FIXLEN250_MINLENNone_START0_EP30_BS15_LR1e-05_avgTimeOnPage_NOZ'
+    model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
 
-#model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
+    # this compares with the model architecture and deletes/copies over if necessary:
+    model_state_dict = utils.modify_state_dict(sd_source=model_state_dict, sd_target=model.state_dict())
+    model.load_state_dict(model_state_dict, strict=True)
+    print("done with loading checkpoint")
 
-# this compares with the model architecture and deletes/copies over if necessary:
-#model_state_dict = utils.modify_state_dict(sd_source=model_state_dict, sd_target=model.state_dict())
-#model.load_state_dict(model_state_dict, strict=True)
-#print("done with loading checkpoint")
+# setting up Tensorboard
+if args.device == 'cpu':
+    tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
+else:
+    tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
+    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
 
+writer = SummaryWriter(tensorboard_path)
+print(f"logging with Tensorboard to path {tensorboard_path}")
 
 
 ##### TRAINING AND EVALUATING #####
@@ -136,7 +138,7 @@ for epoch in range(EPOCHS):
 
         section_input_ids = d["section_input_ids"].to(device)
         section_attention_mask = d["section_attention_mask"].to(device)
-        textlength = d["BERT_tokens"].to(device) #d["textlength"].to(device)
+        #textlength = d["BERT_tokens"].to(device) #d["textlength"].to(device)
         targets = d["target"].to(device)
         # print(targets.shape)
         if MASK_WORDS == True: # masking some of the input ids (better way to do this?
@@ -146,8 +148,8 @@ for epoch in range(EPOCHS):
             flat[indices] = 0
             attention_mask = flat.reshape(attention_mask.shape)
         outputs = model(section_input_ids = section_input_ids,
-                        section_attention_mask = section_attention_mask,
-                        textlength=textlength)
+                        section_attention_mask = section_attention_mask)
+                        #textlength=textlength)
 
         loss = loss_fn(outputs, targets)
         train_losses.append(loss.item())

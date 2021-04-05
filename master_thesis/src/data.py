@@ -137,7 +137,7 @@ class TransformDAN(object):
     def __init__(self, embs, preprocessor):
         self.embs = embs
         self.preprocessor = preprocessor
-        self.fastText_Embs = pd.read_csv(utils.OUTPUT / 'Embs_features' / f'Embs_features_NOZ_full.tsv',
+        self.fastText_Embs = pd.read_csv(utils.OUTPUT / 'Embs_features' / f'Embs_features_NOZ_full_nonlemmatized.tsv',
                        sep='\t', index_col="articleId") # already saved Embs for NOZ
 
     def __call__(self, sample):
@@ -159,8 +159,10 @@ class TransformBertFeatures(object):
         self.start = start
         self.min_len = min_len
         self.tokenizer = tokenizer
-        self.BERT_embs = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_NOZ_full.tsv',
-                       sep='\t', index_col="articleId") # todo: these are the ones with max_len = 128 !!!
+        if fixed_len in [128, 512]: # already exists files with these
+            print("using precomputed DF as feature lookup!")
+            self.BERT_embs = pd.read_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_NOZ_full_FIXLEN{fixed_len}.tsv',
+                           sep='\t', index_col="articleId") # todo: these are the ones with max_len = 128 or 512 !!!
 
     def __call__(self, sample):
         text = sample['text']
@@ -213,11 +215,11 @@ class TransformBertFeatures(object):
         attention_mask[0] = 1
         attention_mask[-1] = 1
 
-        # get the document embedding (hidden state of CLS-token):
-
-        if self.fixed_len == 128:
-            # quicker: look up embeddings (there already exists a df with the Bert Embeddings (max_len = 128):
+        # get the already precomputed document embedding (hidden state of CLS-token):
+        if self.fixed_len in [128, 512]:
+            # quicker: look up embeddings (there already exists a df with the Bert Embeddings (max_len = 128 or 512):
             sample['doc_embedding'] = torch.tensor(self.BERT_embs.loc[sample["articleId"]])
+
 
         else:
             model = models.BERT_embedding()
@@ -415,6 +417,7 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
         device = torch.device('cpu')
     if using == "gpu":
         device = torch.device('cuda')
+    print('Using device:', device)
     model.eval()
     eval_losses = []
 
@@ -429,14 +432,15 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
                 input_ids = d["input_ids"].to(device)
                 attention_mask = d["attention_mask"].to(device)
                 textlength = d["BERT_tokens"].to(device)
+                #textlength = d["textlength"].to(device)
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength = textlength)
-            elif model.__class__ in [models.BertHierarchical]:
-                textlength = d["BERT_tokens"].to(device)
+            elif model.__class__ in [models.BertHierarchical, models.BertHierarchicalRNN]:
+                #textlength = d["BERT_tokens"].to(device)
                 section_input_ids = d["section_input_ids"].to(device)
                 section_attention_mask = d["section_attention_mask"].to(device)
                 outputs = model(section_input_ids=section_input_ids,
-                                section_attention_mask=section_attention_mask,
-                                textlength=textlength)
+                                section_attention_mask=section_attention_mask)
+                                #textlength=textlength)
             elif model.__class__ in [models.baseline_textlength]:
                 textlength = d["BERT_tokens"].to(device)
                 outputs = model(textlength = textlength)
@@ -445,9 +449,11 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
                 attention_mask = d["attention_mask"].to(device)
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             elif model.__class__ in [models.EmbsFFN]:
-                vector = d["doc_embedding"]
+                vector = d["doc_embedding"].to(device)
                 outputs = model(vector = vector)
-
+            elif model.__class__ in [models.CNN]:
+                input_matrix = d["input_matrix"].to(device)
+                outputs = model(input_matrix = input_matrix)
             loss = loss_fn(outputs, targets)
             eval_losses.append(loss.item())
 

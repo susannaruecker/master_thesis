@@ -22,15 +22,15 @@ args = parser.parse_args()
 device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
-MODEL = 'DANFastText'
-#MODEL = 'BertEmbs'
+#MODEL = 'DANFastText'
+MODEL = 'BertEmbs'
 
 
 # HYPERPARAMETERS
 EPOCHS = 60
 GPU_BATCH = 32 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-FIXED_LEN = 128 #512
+FIXED_LEN = 512 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 LR = 1e-3
@@ -48,7 +48,7 @@ if MODEL == 'DANFastText':
     identifier = f"{MODEL}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}"
 
     embs = utils.load_fasttext_vectors(limit=1000) # now only dummy because using saved dataframe
-    preprocessor = utils.Preprocessor(lemmatize=True,
+    preprocessor = utils.Preprocessor(lemmatize=False, # ACHTUNG: in data.TransformDAN werden gespeicherte Daten benutzt, da ist Preprocessing vielleicht anders!
                                       delete_stopwords=True,
                                       delete_punctuation=True)
     model = models.EmbsFFN(n_outputs=1, input_size=300)
@@ -197,3 +197,11 @@ print("BATCH SIZE: ", BATCH_SIZE)
 print("GPU_BATCH: ", GPU_BATCH)
 print("LR: ", LR)
 
+# DAN Fast Text (Achtung, die gespeicherten waren erst mit Lemmatisierung, dann ohne ... Verwirrung
+
+# feste BertFeatures + FFN
+
+# Pearson: 0.61
+# MSE: 12383
+# MAE 58.3
+# RAE 81.8

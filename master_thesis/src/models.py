@@ -217,9 +217,9 @@ class BertHierarchical(nn.Module):
         self.bert = get_BertModel()
         self.ffn = get_FFN(n_outputs = n_outputs, nr_layers= 2, input_size= 768)
         self.weight_vector = torch.nn.Parameter(torch.ones(self.max_sect), requires_grad=True)
-                        # learnable weight vector for weighted sum of section outputs
+                        # learnable weight vector for weighted sum/mean of section outputs
 
-    def forward(self, section_input_ids, section_attention_mask, textlength):
+    def forward(self, section_input_ids, section_attention_mask):
         # Sven meint: hier so tun als wäre input shape (max_sect, Bert-Ids) also  batch ignorieren
         batch_size = section_input_ids.size()[0]
         nr_sections = section_input_ids.size()[1]
@@ -245,9 +245,6 @@ class BertHierarchical(nn.Module):
             hidden_state_cls = out_bert[1]  # pooled output wenn BertModel (hidden state of first token with some modifications)
             section_out = self.ffn(hidden_state_cls)
 
-            ### wenn BertForSequenceClassification:
-            #section_out = out_bert[0] # das sind die logits wenn bert = BertForSequenceClassification
-
             sections_out_dummy[:,nr,:] = section_out
                 #sections_out_dummy[nr,:] = section_out
                 #sections_out.append(section_out)
@@ -255,15 +252,16 @@ class BertHierarchical(nn.Module):
             #sections_out = torch.stack(sections_out, dim=1)
         sections_out = sections_out_dummy
 
+        # SUM
         ###section_sum = torch.sum(sections_out, dim=1) # this would be normal sum WITHOUT weighting
+        #section_sum = torch.sum(sections_out.squeeze(2)*self.weight_vector, dim=1).unsqueeze(1)
+        #return section_sum
 
-        section_sum = torch.sum(sections_out.squeeze(2)*self.weight_vector, dim=1).unsqueeze(1)
+        # MEAN
+        #section_mean = torch.mean(sections_out.squeeze(2) * self.weight_vector, dim=1).unsqueeze(1)
+        section_mean = torch.sum(sections_out.squeeze(2) * self.weight_vector, dim=1).unsqueeze(1)/torch.sum(self.weight_vector)
 
-        #concatenated = torch.cat([section_sum, textlength], dim=1)
-        #out = self.ffn(concatenated)
-        #return out
-        return section_sum
-
+        return section_mean
 
 
 class BERT_embedding(nn.Module):
@@ -283,72 +281,49 @@ class BERT_embedding(nn.Module):
 
 
 
-class BERT_hierarchical_RNN(nn.Module):
+class BertHierarchicalRNN(nn.Module):
     """
     split text in chunks of <=512 tokens and combine outputs somehow
     """
 
-    def __init__(self, n_outputs):
-        super(BERT_hierarchical_RNN, self).__init__()
+    def __init__(self, n_outputs, max_sect = 5):
+        super(BertHierarchicalRNN, self).__init__()
+        self.max_sect = max_sect
         self.bert = get_BertModel()
 
-        #self.rnn = nn.RNN(768, 264, 2) # TODO: wieviele layers? welche hidden size?
-        self.rnn = nn.GRU(768, 264, 2) # auch mal ausprobieren?
-        #self.rnn = nn.LSTM(768, 264, 2)
+        # rnn Layer (input_size, hidden_size, nr_layers)
+        #self.rnn = nn.RNN(768, 512, 1, batch_first=True) # TODO: wieviele layers? welche hidden size?
+        self.rnn = nn.GRU(768, 768, 2, batch_first=True)
+        #self.rnn = nn.LSTM(768, 512, 2, batch_first=True)
 
-        self.out = nn.Sequential(nn.Linear(529, 128), # 2*264 + 1
-                                  nn.LeakyReLU(0.01),
-                                  nn.Dropout(p=0.3),
-                                  nn.Linear(128, 64),
-                                  nn.LeakyReLU(0.01),
-                                  nn.Dropout(p=0.3),
-                                  nn.Linear(64, n_outputs)
-                                  )
+        self.ffn = get_FFN(n_outputs=1, input_size=768, nr_layers=2)
 
-    def forward(self, section_input_ids, section_attention_mask, textlength):
+    def forward(self, section_input_ids, section_attention_mask):
         nr_sections = section_input_ids.size()[1]
         sections_out = []
         #print("nr_sections in this batch:", nr_sections)
-        #print(section_input_ids.size())
-        #print(section_attention_mask.size())
         for nr in range(nr_sections):
             #print("nr", nr)
             input_ids = section_input_ids[:,nr,:]
-            #print(input_ids.size())
             attention_mask = section_attention_mask[:,nr,:]
-            #print(attention_mask.size())
             out_bert = self.bert(input_ids=input_ids, attention_mask=attention_mask)
             hidden_state_cls = out_bert[1]  # pooled output (hidden state of first token with some modifications)
             #print(hidden_state_cls.size())
             sections_out.append(hidden_state_cls)
         sections_out = torch.stack(sections_out, dim=1) # (batchsize, sections, 768)
         #print(sections_out)
-        #print("section_out", sections_out.size())
+        #print("sections_out", sections_out.size())
 
         # now an rnn over all section_out per section
-        #print(sections_out.permute(1,0,2).size())
-        output, hidden_state_last_timestep = self.rnn(sections_out.permute(1,0,2))
+        output, hidden_state_last_timestep = self.rnn(sections_out)
         #print("output", output.size())
+
+        # pytorch gives hidden_state_last_timestep of ALL layers --> take the one from the last layer ([-1])
         #print("hidden_state_last_timestep", hidden_state_last_timestep.size())
-        hidden_state_last_timestep = hidden_state_last_timestep.permute(1,0,2)
-        stacked = hidden_state_last_timestep.reshape(hidden_state_last_timestep.size()[0], -1) # (batch_size, ...)
-        #print("stacked", stacked.size())
-        concatenated = torch.cat([stacked, textlength], dim=1)
-        #print("concat", concatenated.size())
+        #todo: ist das so richtig?
 
-        out = self.out(concatenated)
+        out = self.ffn(hidden_state_last_timestep[-1,:,:]) # last hidden state, last timestep, LAST LAYER
         #print("out", out.size())
-
-
-
-        #section_sum = torch.sum(sections_out, dim=1)
-        #print(section_sum)
-        #print(section_sum.size())
-        #concatenated = torch.cat([section_sum, textlength], dim=1)
-        #print(concatenated)
-        #print(concatenated.size()) # just the "textlength" sum and the texlength
-
-        #out = self.out(concatenated)
 
         return out
 
@@ -367,63 +342,71 @@ class BERT_hierarchical_RNN(nn.Module):
 class CNN(nn.Module):
     """ uses dataloader that returns input_matrix von input_ids of the text
     """
-    def __init__(self, num_outputs,
+    def __init__(self, n_outputs,
                        embs_dim = 300,
-                       filter_sizes=[3, 4, 5],
-                       num_filters=[100,100,100]):
+                       filter_sizes=[2, 3, 4, 5],
+                       num_filters=64):
         super(CNN, self).__init__()
         self.embs_dim = embs_dim
-        self.num_outputs = num_outputs
+        self.n_outputs = n_outputs
         self.filter_sizes = filter_sizes
         self.num_filters = num_filters
 
-        # Convolutional Filters
-        self.conv1d_list = nn.ModuleList([ nn.Conv1d(in_channels=self.embs_dim,
-                                                     out_channels=self.num_filters[i],
-                                                     kernel_size=self.filter_sizes[i])
-                                           for i in range(len(self.filter_sizes))
-                                         ])
-        # Fully-connected layer and Dropout
-        self.fc = nn.Linear(np.sum(self.num_filters), 128)
-        self.out = nn.Linear(128, self.num_outputs)
-        self.drop = nn.Dropout(p=0.5)
-        self.drop_embs = nn.Dropout(p=0.2)
+        # convolutional filters of different kernelsizes
+        # using conv2d
+        #self.convs = nn.ModuleList([nn.Conv2d(in_channels = 1,
+        #                                      out_channels = self.num_filters,
+        #                                      kernel_size = (filter_size, self.embs_dim),
+        #                                      )
+        #                                for filter_size in self.filter_sizes])
+
+        # using conv1d
+        self.convs = nn.ModuleList([nn.Conv1d(in_channels=self.embs_dim,
+                                              out_channels=self.num_filters,
+                                              kernel_size=filter_size)
+                                          for filter_size in self.filter_sizes])
+
+
+        self.drop = nn.Dropout(p=0.2)
         self.LReLU = nn.LeakyReLU(0.01)
 
+        self.ffn = nn.Sequential(nn.Linear(self.num_filters * len(self.filter_sizes), 64),
+                                 self.LReLU,
+                                 self.drop,
+                                 nn.Linear(64, self.n_outputs)
+                                 )
+
+        #self.ffn = nn.Sequential(nn.Linear(self.num_filters * len(self.filter_sizes), 1),
+        #                         )
+
     def forward(self, input_matrix):
-        # x is already embedding matrix. Output shape: (b, max_len, embed_dim)
-        x_embed = self.drop_embs(input_matrix)
-        #print("x_embed", x_embed.size())
+        x = self.drop(input_matrix)
 
-        # Permute `x_embed` to match input shape requirement of `nn.Conv1d`.
-        # Output shape: (b, embed_dim, max_len)
-        x_reshaped = x_embed.permute(0, 2, 1)
-        #print("x_reshaped", x_reshaped.size())
+        # change shape to match shape requirement...
+        #x = torch.unsqueeze(x, dim=1) # for 2d
+        x = x.permute(0, 2, 1) # for 1d
+        #print("x after reshaping", x.size())
 
-        # Apply CNN and ReLU. Output shape: (b, num_filters[i], L_out)
-        x_conv_list = [F.relu(conv1d(x_reshaped)) for conv1d in self.conv1d_list]
-        #print("x_conv_list_0", x_conv_list[0].size())
-        #print("x_conv_list_1", x_conv_list[1].size())
-        #print("x_conv_list_2", x_conv_list[2].size())
+        # Apply CNN and activation. Output shape: (b, num_filters, L_out)
+        x_conv_list = [self.LReLU(conv(x)) for conv in self.convs]
+        #print("x_conv_list", x_conv_list[0].size(), x_conv_list[1].size(), x_conv_list[2].size(), x_conv_list[3].size())
 
-        ## Max pooling. Output shape: (b, num_filters[i], 1)
-        #x_pool_list = [F.max_pool1d(x_conv, kernel_size=x_conv.shape[2])
-        #               for x_conv in x_conv_list]
 
-        # Average pooling. Output shape: (b, num_filters[i], 1)
-        x_pool_list = [F.avg_pool1d(x_conv, kernel_size=x_conv.shape[2])
+        ## Max pooling. Output shape: (b, num_filters, 1)
+        x_pool_list = [F.max_pool1d(torch.squeeze(x_conv, -1), kernel_size=x_conv.shape[2])
                        for x_conv in x_conv_list]
 
-        # Concatenate x_pool_list to feed the fully connected layer.
-        # Output shape: (b, sum(num_filters))
-        x_fc = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
-        #print("x_fc", x_fc.size())
+        # Average pooling. Output shape: (b, num_filters, 1)
+        #x_pool_list = [F.avg_pool1d(torch.squeeze(x_conv, -1), kernel_size=x_conv.shape[2])
+        #               for x_conv in x_conv_list]
 
-        # Output shape: (b, n_classes)
-        x_fc2 = self.drop(self.LReLU(self.fc(x_fc)))
-        #print("x_fc2", x_fc2.size())
-        out = self.out(x_fc2)
-        #print("out", out.size())
+        #print("x_pool_list", x_pool_list[0].size(), x_pool_list[1].size(), x_pool_list[2].size(), x_pool_list[3].size())
+
+
+        # Concatenate x_pool_list to feed into FFN
+        x_flat = torch.cat([x_pool.squeeze(dim=2) for x_pool in x_pool_list], dim=1)
+        #print("x_flat", x_flat.size())
+        out = self.ffn(x_flat)
 
         return out
 

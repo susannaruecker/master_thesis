@@ -26,8 +26,8 @@ print('Using device:', device)
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
 #MODEL = 'BertSequence'
-MODEL = 'BertFFN'
-#MODEL = 'BertAveraging'
+#MODEL = 'BertFFN'
+MODEL = 'BertAveraging'
 
 
 if MODEL == 'BertSequence':
