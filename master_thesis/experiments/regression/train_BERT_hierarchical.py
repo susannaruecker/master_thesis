@@ -83,8 +83,8 @@ print("BERT_tokens:", d['BERT_tokens'])
 
 # loss and optimizer
 optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR)
-optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-4)
-optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=1e-4)
+optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=5e-4) # hier war vorher 1e-3
+optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=5e-4) # hier auch
 
 loss_fn = nn.MSELoss()  # mean squared error
 
@@ -95,7 +95,8 @@ if LOAD_CHECKPOINT == True:
     ### NEW: loading checkpoint (specific layer weights) from a BERT baseline
 
     checkpoint_path = utils.OUTPUT / 'saved_models' / \
-                      'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'
+                      'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
+                      #'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'
 
     model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
 
