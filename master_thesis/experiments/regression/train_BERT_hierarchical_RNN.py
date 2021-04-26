@@ -27,8 +27,8 @@ print('Using device:', device)
 EPOCHS = 50
 GPU_BATCH = 1 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 400 #todo: smaller or bigger?
-MAX_SECT = 6 #todo: more or less?
+SECTION_SIZE = 256 #512 #todo: smaller or bigger?
+MAX_SECT = 10 # hier waren bei 512 immer 5
 
 LR = 1e-5
 MASK_WORDS = False
@@ -41,15 +41,6 @@ PUBLISHER = 'NOZ'
 starting_time = utils.get_timestamp()
 identifier = f"BertHierarchicalRNN_SECTIONSIZE{SECTION_SIZE}_MAX_SECT{MAX_SECT}_EP{EPOCHS}_BS{BATCH_SIZE}_LR{LR}_{TARGET}_{PUBLISHER}_GRU"
 
-# setting up Tensorboard
-if args.device == 'cpu':
-    tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
-else:
-    tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
-    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
-
-writer = SummaryWriter(tensorboard_path)
-print(f"logging with Tensorboard to path {tensorboard_path}")
 
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
@@ -92,11 +83,39 @@ print("BERT_tokens:", d['BERT_tokens'])
 
 # loss and optimizer
 optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR)
-optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=1e-3)
-optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr=1e-4)
+optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr = 1e-3)
+optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr = 1e-5)
 
 loss_fn = nn.MSELoss()  # mean squared error
 
+LOAD_CHECKPOINT = True # False
+if LOAD_CHECKPOINT == True:
+    print("using pretrained weights from a BERT baseline")
+    identifier = identifier + '_pretrained'
+    ### NEW: loading checkpoint (specific layer weights) from a BERT baseline
+
+    checkpoint_path = utils.OUTPUT / 'saved_models' / \
+                      'BertFFN_FIXLEN256_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-04-22_11:38:31'
+                      #'BertFFN_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-03-03_00:13:33'
+                      #'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
+                      #'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'
+
+    model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
+
+    # this compares with the model architecture and deletes/copies over if necessary:
+    model_state_dict = utils.modify_state_dict(sd_source=model_state_dict, sd_target=model.state_dict())
+    model.load_state_dict(model_state_dict, strict=True)
+    print("done with loading checkpoint")
+
+# setting up Tensorboard
+if args.device == 'cpu':
+    tensorboard_path = utils.TENSORBOARD / f'debugging/{identifier}'
+else:
+    tensorboard_path = utils.TENSORBOARD / f'runs_{TARGET}/{identifier}_{starting_time}'
+    model_path = utils.OUTPUT / 'saved_models' / f'{identifier}_{starting_time}'
+
+writer = SummaryWriter(tensorboard_path)
+print(f"logging with Tensorboard to path {tensorboard_path}")
 
 ##### TRAINING AND EVALUATING #####
 

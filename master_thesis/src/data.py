@@ -38,6 +38,14 @@ class PublisherDataset(Dataset):
 
         self.df = self.df.loc[set_IDs]
         self.df = self.df.sample(frac=fraction, replace=False, random_state=1) # possible for faster trials
+
+        # try: min and max text length
+        #self.df = self.df[self.df.nr_tokens_text >= 50]
+        #self.df = self.df[self.df.nr_tokens_text <= 1500]
+        #self.df = self.df[self.df.avgTimeOnPage <= 1800] # 30 Minuten
+
+        print(f"Length of Dataset {set}", len(self.df))
+
         self.set = set
         self.text_base = text_base
         self.target = target
@@ -431,8 +439,8 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
             if model.__class__ in [models.BertTextlength]:
                 input_ids = d["input_ids"].to(device)
                 attention_mask = d["attention_mask"].to(device)
-                textlength = d["BERT_tokens"].to(device)
-                #textlength = d["textlength"].to(device)
+                #textlength = d["BERT_tokens"].to(device)
+                textlength = d["textlength"].to(device) # TODO
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, textlength = textlength)
             elif model.__class__ in [models.BertHierarchical, models.BertHierarchicalRNN]:
                 #textlength = d["BERT_tokens"].to(device)

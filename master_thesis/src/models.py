@@ -157,7 +157,7 @@ class BertTextlength(nn.Module):
 
         self.bert = get_BertModel()
         #self.ffn = get_FFN(n_outputs=n_outputs, input_size=769, nr_layers=1)
-        self.ffn = get_FFN(n_outputs=n_outputs, input_size=769, nr_layers=2)
+        self.ffn = get_FFN(n_outputs=n_outputs, input_size=769, nr_layers=2) # TODO: das hier war bisher
         #self.ffn = get_FFN(n_outputs=n_outputs, input_size=769, nr_layers=3)
         #self.ffn = get_FFN(n_outputs=n_outputs, input_size=769, nr_layers=4)
 
@@ -251,6 +251,8 @@ class BertHierarchical(nn.Module):
 
             #sections_out = torch.stack(sections_out, dim=1)
         sections_out = sections_out_dummy
+        #print(sections_out)
+        #print(self.weight_vector)
 
         # SUM
         ###section_sum = torch.sum(sections_out, dim=1) # this would be normal sum WITHOUT weighting
@@ -260,7 +262,7 @@ class BertHierarchical(nn.Module):
         # MEAN
         #section_mean = torch.mean(sections_out.squeeze(2) * self.weight_vector, dim=1).unsqueeze(1)
         section_mean = torch.sum(sections_out.squeeze(2) * self.weight_vector, dim=1).unsqueeze(1)/torch.sum(self.weight_vector)
-
+        #print(section_mean)
         return section_mean
 
 

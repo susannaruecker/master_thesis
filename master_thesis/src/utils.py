@@ -514,7 +514,7 @@ class Preprocessor():
                 rt.append(token.lemma_.lower())
         else:
             for token in doc:
-                rt.append(token.text)
+                rt.append(token.text.lower())
 
         if self.delete_punctuation == True:
             rt = [t for t in rt if t not in string.punctuation]

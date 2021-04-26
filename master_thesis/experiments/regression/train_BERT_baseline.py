@@ -26,8 +26,8 @@ print('Using device:', device)
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
 #MODEL = 'BertSequence'
-#MODEL = 'BertFFN'
-MODEL = 'BertAveraging'
+MODEL = 'BertFFN'
+#MODEL = 'BertAveraging'
 
 
 if MODEL == 'BertSequence':
@@ -45,9 +45,15 @@ model.to(device)
 EPOCHS = 30
 GPU_BATCH = 4 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-FIXED_LEN = 512 #128 #512
+FIXED_LEN = 512 #512 #128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
+
+# mal ausprobieren mit random window statt Anfang # TODO: change back!
+#FIXED_LEN = None
+#MIN_LEN = 510 # min window size (not used im FIXED_LEN is given)
+#START = None
+
 LR = 1e-5
 FRACTION = 1
 

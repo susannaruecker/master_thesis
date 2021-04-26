@@ -24,11 +24,11 @@ print('Using device:', device)
 
 
 # HYPERPARAMETERS
-EPOCHS = 100
-GPU_BATCH = 4 # what can actually be done in one go on the GPU
+EPOCHS = 50
+GPU_BATCH = 1 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 128 #todo: smaller or bigger?
-MAX_SECT = 8 #todo: more or less?
+SECTION_SIZE = 256 #todo: smaller or bigger?
+MAX_SECT = 10 # hier waren bei 512 immer 5
 
 LR = 1e-5
 MASK_WORDS = False
@@ -83,19 +83,21 @@ print("BERT_tokens:", d['BERT_tokens'])
 
 # loss and optimizer
 optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR)
-optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr=5e-4) # hier war vorher 1e-3
-optimizer_weight_vector = optim.AdamW([model.weight_vector], lr=5e-4) # hier auch
+optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr = 1e-3) # hier war vorher 1e-3
+optimizer_weight_vector = optim.AdamW([model.weight_vector], lr = 1e-3) # hier auch
 
 loss_fn = nn.MSELoss()  # mean squared error
 
-LOAD_CHECKPOINT = True # True
+LOAD_CHECKPOINT = True # False
 if LOAD_CHECKPOINT == True:
     print("using pretrained weights from a BERT baseline")
     identifier = identifier + '_pretrained'
     ### NEW: loading checkpoint (specific layer weights) from a BERT baseline
 
     checkpoint_path = utils.OUTPUT / 'saved_models' / \
-                      'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
+                      'BertFFN_FIXLEN256_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-04-22_11:38:31'
+                      #'BertFFN_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-03-03_00:13:33'
+                      #'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
                       #'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'
 
     model_state_dict = torch.load(checkpoint_path)['model_state_dict'] # nimmt so weniger Speicher in Anspruch ...
@@ -244,3 +246,6 @@ print("LR: ", LR)
 
 # nach 70 Epochen war: weight_vector values now: tensor([1.2078, 1.1993, 1.1906, 1.1719, 1.1554, 1.1367, 1.1184, 1.1134]
 
+# BertHierarchical_SECTIONSIZE512_MAX_SECT5_EP100_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_2021-04-08_15:29:27
+# am Ende war:
+# weight_vector values now: tensor([0.8975, 0.7218, 0.5861, 0.5047, 0.6048], device='cuda:0')
