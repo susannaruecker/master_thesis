@@ -22,8 +22,8 @@ args = parser.parse_args()
 device = torch.device('cpu' if args.device == 'cpu' else 'cuda')
 print('Using device:', device)
 
-#MODEL = 'DANFastText'
-MODEL = 'BertEmbs'
+MODEL = 'DANFastText'
+#MODEL = 'BertEmbs'
 
 
 # HYPERPARAMETERS
@@ -131,7 +131,7 @@ for epoch in range(EPOCHS):
         sample_count += len_minibatch # up to BATCH_SIZE
         print("-Sample", nr_samples, end='\r')
         targets = d["target"].to(device)
-        vector = d["doc_embedding"]
+        vector = d["doc_embedding"].to(device)
         outputs = model(vector=vector)
 
         loss = loss_fn(outputs, targets)

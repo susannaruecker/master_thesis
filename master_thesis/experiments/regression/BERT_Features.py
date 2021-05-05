@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # only necessary one time for the fixed len...
     FIXED_LEN = 512
-    create_features(FIXED_LEN = 512)
+    #create_features(FIXED_LEN = 512)
 
     # load features
     PUBLISHER = "NOZ"
@@ -123,9 +123,9 @@ if __name__ == "__main__":
                        sep='\t', index_col="articleId")
 
     # concatenate and save them
-    X_full_df = pd.concat([X_train_df, X_dev_df, X_test_df])
-    X_full_df.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_full_FIXLEN{FIXED_LEN}.tsv',
-                 sep='\t', index_label="articleId")
+    #X_full_df = pd.concat([X_train_df, X_dev_df, X_test_df])
+    #X_full_df.to_csv(utils.OUTPUT / 'BERT_features' / f'BERT_features_{PUBLISHER}_full_FIXLEN{FIXED_LEN}.tsv',
+    #             sep='\t', index_label="articleId")
 
     # convert to numpy
     X_train, X_dev, X_test = np.array(X_train_df), np.array(X_dev_df), np.array(X_test_df)
@@ -154,11 +154,25 @@ if __name__ == "__main__":
     print("predicting dev set")
     pred_dev = model.predict(X_dev)
 
-    # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    #pred_dev[pred_dev < 0] = 0
+    df_dev = pd.DataFrame(0., index=df_dev.index, columns=["true", "pred"])
+    df_dev["true"] = y_dev
+    df_dev["pred"] = pred_dev
+    df_dev.to_csv(utils.OUTPUT / "predictions" / "dev" / f'BertFeaturesRidge.tsv', sep="\t", index=True,
+                  index_label="articleId")
+
+    # predict for test set
+    print("predicting test set")
+    pred_test = model.predict(X_test)
+
+    df_test = pd.DataFrame(0., index=df_test.index, columns=["true", "pred"])
+    df_test["true"] = y_test
+    df_test["pred"] = pred_test
+    df_test.to_csv(utils.OUTPUT / "predictions" / "test" / f'BertFeaturesRidge.tsv', sep="\t", index=True,
+                  index_label="articleId")
 
     # Pearson's r and MSE as evaluation metric
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
+    print("Spearman: ", st.spearmanr(pred_dev, y_dev)[0])
     print("MSE: ", mean_squared_error(pred_dev, y_dev))
     print("MAE: ", mean_absolute_error(pred_dev, y_dev))
     print("RAE:", utils.relative_absolute_error(pred_dev, y_dev))

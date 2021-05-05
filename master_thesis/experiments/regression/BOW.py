@@ -3,6 +3,7 @@
 from master_thesis.src import utils, data
 
 import numpy as np
+import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from sklearn.linear_model import Ridge
@@ -154,13 +155,28 @@ def train_BOW_model(classifier = "ridge",
     print("predicting dev set")
     pred_dev = model.predict(X_dev)
 
-    # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    pred_dev[pred_dev < 0] = 0
+    df_dev = pd.DataFrame(0., index=dev_IDs, columns=["true", "pred"])
+    df_dev["true"] = y_dev
+    df_dev["pred"] = pred_dev
+    print(df_dev.head())
+    df_dev.to_csv(utils.OUTPUT / "predictions" / "dev" / f'BOW_{classifier}_{feature_type}_{str(max_features)}.tsv', sep="\t", index=True,
+                  index_label="articleId")
 
-    if target == "log_avgTimeOnPage":
-        "transforming log values back to avgTimeOnPage"
-        pred_dev = np.exp(pred_dev)
-        y_dev = np.exp(y_dev)
+
+    print("predicting test set")
+    pred_test = model.predict(X_test)
+
+    df_test = pd.DataFrame(0., index=test_IDs, columns=["true", "pred"])
+    df_test["true"] = y_test
+    df_test["pred"] = pred_test
+    print(df_test.head())
+    df_test.to_csv(utils.OUTPUT / "predictions" / "test" / f'BOW_{classifier}_{feature_type}_{str(max_features)}.tsv', sep="\t", index=True,
+                  index_label="articleId")
+
+    #if target == "log_avgTimeOnPage":
+    #    "transforming log values back to avgTimeOnPage"
+    #    pred_dev = np.exp(pred_dev)
+    #    y_dev = np.exp(y_dev)
 
     # Pearson's r and MSE as evaluation metric
     print("text_base:", text_base)
@@ -194,9 +210,9 @@ train_BOW_model(classifier= "ridge", #"ridge", #"xgboost",
                 vectorizer_type= "CountVectorizer", #"CountVectorizer", # "TfidfVectorizer"
                 publisher = PUBLISHER,
                 preprocessor = preprocessor,
-                feature_type = 'bin',
+                feature_type = 'abs',
                 load = False,
-                max_features = 100000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                max_features = 10000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
                 text_base = 'article_text', #'teaser', #'text_preprocessed',
                 target = TARGET
                 )
@@ -227,7 +243,8 @@ train_BOW_model(classifier= "ridge", #"ridge", #"xgboost",
 # 200: Pearson:  0.45, MSE:  15498.22, MAE:  65.13, RAE: 91.386
 # 1000: Pearson:  0.48, MSE:  15163.24, MAE:  66.56, RAE: 93.392
 # 10000 rel 0.37, abs: 0.40, bin: 0.40
-# 10000 (true,true,true) 0.40)
+# 10000 (true,true,true) 0.40
+# 1000 (true,true,true) 0.47
 
 # CountVectorizer + xgboost
 # 500: Pearson: 0.48

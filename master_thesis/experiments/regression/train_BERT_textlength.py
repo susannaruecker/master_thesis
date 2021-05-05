@@ -121,7 +121,7 @@ for epoch in range(EPOCHS):
         input_ids = d["input_ids"].to(device)
         attention_mask = d["attention_mask"].to(device)
         #textlength = d['BERT_tokens'].to(device)
-        textlength = d['textlength'].to(device) # TODO
+        textlength = d['textlength'].to(device) # TODO: which one?
         targets = d["target"].to(device)
         if MASK_WORDS == True: # masking some of the input ids (better way to do this?
             indices = np.random.choice(np.arange(len(attention_mask.flatten())), replace=False,

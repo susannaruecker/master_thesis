@@ -27,7 +27,7 @@ print('Using device:', device)
 EPOCHS = 50
 GPU_BATCH = 1 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 256 #512 #todo: smaller or bigger?
+SECTION_SIZE = 128 #256 #512 #todo: smaller or bigger?
 MAX_SECT = 10 # hier waren bei 512 immer 5
 
 LR = 1e-5
@@ -88,7 +88,7 @@ optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr = 1e-5)
 
 loss_fn = nn.MSELoss()  # mean squared error
 
-LOAD_CHECKPOINT = True # False
+LOAD_CHECKPOINT = False #True # False
 if LOAD_CHECKPOINT == True:
     print("using pretrained weights from a BERT baseline")
     identifier = identifier + '_pretrained'

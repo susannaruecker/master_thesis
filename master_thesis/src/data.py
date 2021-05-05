@@ -147,6 +147,8 @@ class TransformDAN(object):
         self.preprocessor = preprocessor
         self.fastText_Embs = pd.read_csv(utils.OUTPUT / 'Embs_features' / f'Embs_features_NOZ_full_nonlemmatized.tsv',
                        sep='\t', index_col="articleId") # already saved Embs for NOZ
+        print("Using already precomputed feature matrix for NOZ!")
+
 
     def __call__(self, sample):
         # this would do them "from scratch"
@@ -431,11 +433,13 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
 
     pred = []  # for calculating Pearson's r on dev
     true = []
+    articleIDs = []
 
     with torch.no_grad():
         for nr, d in enumerate(dl):
             print("-Batch", nr, end='\r')
             targets = d["target"].to(device)
+            IDs = d["articleId"]
             if model.__class__ in [models.BertTextlength]:
                 input_ids = d["input_ids"].to(device)
                 attention_mask = d["attention_mask"].to(device)
@@ -467,12 +471,15 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
 
             outputs = outputs.squeeze().cpu()
             targets = targets.squeeze().cpu()
+
             if len(d["target"]) == 1:  # necessary if BATCH_SIZE = 1
                 pred.append(outputs)
                 true.append(targets)
+                articleIDs.append(IDs[0]) # stupid, but IDs is a list with one item...
             else:
                 pred.extend(outputs)
                 true.extend(targets)
+                articleIDs.extend(IDs)
 
             if max_batch:
                 if nr >= max_batch:
@@ -482,15 +489,22 @@ def evaluate_model(model, dl, loss_fn, using = "cpu", max_batch = None):
     print("- pred:", [round(t.item(), 2) for t in pred[:10]])
     print("- true:", [round(t.item(), 2) for t in true[:10]])
     print("- MEAN and STD of predicted values:", np.mean(pred), np.std(pred))
+    print("- MEAN and STD of true values:", np.mean(true), np.std(true))
 
     print("- Length of dataset used to evaluate:", len(pred))
+    pred_list = [ round(t.item(), 4) for t in pred ]
+    true_list = [ round(t.item(), 4) for t in true ]
+
 
     return {'Pearson': st.pearsonr(pred, true)[0],
             'Spearman': st.spearmanr(pred, true)[0],
             'MSE': mean_squared_error(pred, true),
             'MAE': mean_absolute_error(pred, true),
             'RAE': utils.relative_absolute_error(np.array(pred), np.array(true)),
-            'eval_loss': np.mean(eval_losses)}
+            'eval_loss': np.mean(eval_losses),
+            'pred': pred_list,
+            'true': true_list,
+            'articleIDs': articleIDs}
 
 
 

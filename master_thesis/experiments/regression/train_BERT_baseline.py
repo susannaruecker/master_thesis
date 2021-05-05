@@ -5,7 +5,7 @@
 import torch
 from torch import optim, nn
 from transformers import BertTokenizer
-from transformers.optimization import AdamW
+#from transformers.optimization import AdamW
 from torch.utils.data import DataLoader
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
@@ -25,8 +25,8 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-#MODEL = 'BertSequence'
-MODEL = 'BertFFN'
+MODEL = 'BertSequence'
+#MODEL = 'BertFFN'
 #MODEL = 'BertAveraging'
 
 
@@ -49,12 +49,12 @@ FIXED_LEN = 512 #512 #128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 
-# mal ausprobieren mit random window statt Anfang # TODO: change back!
+# mal ausprobiert mit random window statt Anfang --> ist nicht besser als Anfang
 #FIXED_LEN = None
 #MIN_LEN = 510 # min window size (not used im FIXED_LEN is given)
 #START = None
 
-LR = 1e-5
+LR = 0.001 # todo: change back to 1e-5!
 FRACTION = 1
 
 TARGET = 'avgTimeOnPage'

@@ -59,13 +59,27 @@ def train_Embs_model(preprocessor,
     print("predicting dev set")
     pred_dev = model.predict(X_dev)
 
-    # postprocessing: replace negative values with 0 (better way? can I give that hint to the model?)
-    #pred_dev[pred_dev < 0] = 0
+    df_dev = pd.DataFrame(0., index=dev_IDs, columns=["true", "pred"])
+    df_dev["true"] = y_dev
+    df_dev["pred"] = pred_dev
+    df_dev.to_csv(utils.OUTPUT / "predictions" / "dev" / f'EmbsRidge.tsv', sep="\t", index=True,
+                  index_label="articleId")
+
+    # predict for test set
+    print("predicting test set")
+    pred_test = model.predict(X_test)
+
+    df_test = pd.DataFrame(0., index=test_IDs, columns=["true", "pred"])
+    df_test["true"] = y_test
+    df_test["pred"] = pred_test
+    df_test.to_csv(utils.OUTPUT / "predictions" / "test" / f'EmbsRidge.tsv', sep="\t", index=True,
+                  index_label="articleId")
 
     # Pearson's r and MSE as evaluation metric
     print("text_base:", text_base)
     print("target:", target)
     print("Pearson: ", st.pearsonr(pred_dev, y_dev))
+    print("Spearman: ", st.spearmanr(pred_dev, y_dev)[0])
     print("MSE: ", mean_squared_error(pred_dev, y_dev))
     print("MAE: ", mean_absolute_error(pred_dev, y_dev))
     print("RAE:", utils.relative_absolute_error(pred_dev, y_dev))

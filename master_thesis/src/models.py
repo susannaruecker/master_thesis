@@ -347,7 +347,7 @@ class CNN(nn.Module):
     def __init__(self, n_outputs,
                        embs_dim = 300,
                        filter_sizes=[2, 3, 4, 5],
-                       num_filters=64):
+                       num_filters=32):
         super(CNN, self).__init__()
         self.embs_dim = embs_dim
         self.n_outputs = n_outputs
