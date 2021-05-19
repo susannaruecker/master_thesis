@@ -42,9 +42,9 @@ def train_BOW_model(classifier = "ridge",
 
     if load == True:
         print("loading features...")
-        X_train = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_abs_{str(max_features)}.npy')
-        X_dev = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_abs_{str(max_features)}.npy')
-        X_test = np.load(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_abs_{str(max_features)}.npy')
+        X_train = np.load(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_train_abs_{str(max_features)}_{preprocessing}.npy')
+        X_dev = np.load(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_dev_abs_{str(max_features)}_{preprocessing}.npy')
+        X_test = np.load(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_test_abs_{str(max_features)}_{preprocessing}.npy')
 
     else:
         print("creating features...")
@@ -64,65 +64,52 @@ def train_BOW_model(classifier = "ridge",
                                          max_features = max_features
                                          )
 
-            print("fitting vectorizer and transforming texts to features...")
-            X_train = vectorizer.fit_transform(df_train[text_base])
-            X_dev = vectorizer.transform(df_dev[text_base])
-            X_test = vectorizer.transform(df_test[text_base])
-
-            X_train, X_dev, X_test = X_train.toarray(), X_dev.toarray(), X_test.toarray()
-
-            #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_abs_{str(max_features)}.npy', X_train)
-            #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_abs_{str(max_features)}.npy', X_dev)
-            #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_abs_{str(max_features)}.npy', X_test)
-
-            # saving vectorizer (for inference and for having feature_names)
-            with open(utils.OUTPUT / 'BOW_features' / f'{publisher}_vectorizer_{str(max_features)}.pkl', "wb") as fp:
-                pickle.dump(vectorizer, fp)
-
-            if feature_type == 'abs':
-                print("using absolute frequency")
-                X_train, X_dev, X_test = X_train, X_dev, X_test
-
-            if feature_type == 'rel':
-                print("using relative frequency")
-                # convert to relative frequencies #TODO: Achtung, hier kann Division durch 0 auftreten, wie damit umgehen?
-                X_train_rel = X_train/X_train.sum(axis=1, keepdims=True)
-                X_dev_rel = X_dev/X_dev.sum(axis=1, keepdims=True)
-                X_test_rel = X_test/X_test.sum(axis=1, keepdims=True)
-
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_rel_{str(max_features)}.npy', X_train_rel)
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_rel_{str(max_features)}.npy', X_dev_rel)
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_rel_{str(max_features)}.npy', X_test_rel)
-
-                X_train, X_dev, X_test = X_train_rel, X_dev_rel, X_test_rel
-
-            if feature_type == 'bin':
-                print("using binary frequency (present or not)")
-
-                # convert to binary values
-                X_train_bool = X_train > 0
-                X_dev_bool = X_dev > 0
-                X_test_bool = X_test > 0
-
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_train_bool_{str(max_features)}.npy', X_train_bool)
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_dev_bool_{str(max_features)}.npy', X_dev_bool)
-                #np.save(utils.OUTPUT / 'BOW_features' / f'{publisher}_X_test_bool_{str(max_features)}.npy', X_test_bool)
-
-                X_train, X_dev, X_test = X_train_bool, X_dev_bool, X_test_bool
-
         if vectorizer_type == "TfidfVectorizer":
-            print("Using TfidfVectorizer, no saving...")
+            print("Using TfidfVectorizer")
             vectorizer = TfidfVectorizer(analyzer='word',
                                          preprocessor=preprocessor,
                                          ngram_range=(1, MAX_NGRAM),
                                          min_df=MIN_DF,  # Achtung: vielleicht je nach Textbasis anpassen?
                                          max_features=max_features
                                          )
-            X_train = vectorizer.fit_transform(df_train[text_base])
-            X_dev = vectorizer.transform(df_dev[text_base])
-            X_test = vectorizer.transform(df_test[text_base])
+        print("fitting vectorizer and transforming texts to features...")
+        X_train = vectorizer.fit_transform(df_train[text_base])
+        X_dev = vectorizer.transform(df_dev[text_base])
+        X_test = vectorizer.transform(df_test[text_base])
 
-            X_train, X_dev, X_test = X_train.toarray(), X_dev.toarray(), X_test.toarray()
+        X_train, X_dev, X_test = X_train.toarray(), X_dev.toarray(), X_test.toarray()
+
+        np.save(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_train_abs_{str(max_features)}_{preprocessing}.npy', X_train)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_dev_abs_{str(max_features)}_{preprocessing}.npy', X_dev)
+        np.save(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_X_test_abs_{str(max_features)}_{preprocessing}.npy', X_test)
+
+        # saving vectorizer (for inference and for having feature_names)
+        with open(utils.OUTPUT / 'BOW_features' / f'{vectorizer_type}_{publisher}_vectorizer_{str(max_features)}_{preprocessing}.pkl', "wb") as fp:
+            pickle.dump(vectorizer, fp)
+
+    if feature_type == 'abs':
+        print("using absolute frequency")
+        X_train, X_dev, X_test = X_train, X_dev, X_test
+
+    if feature_type == 'rel':
+        print("using relative frequency")
+        # convert to relative frequencies #TODO: Achtung, hier kann Division durch 0 auftreten, wie damit umgehen?
+        X_train_rel = X_train/X_train.sum(axis=1, keepdims=True)
+        X_dev_rel = X_dev/X_dev.sum(axis=1, keepdims=True)
+        X_test_rel = X_test/X_test.sum(axis=1, keepdims=True)
+
+        X_train, X_dev, X_test = X_train_rel, X_dev_rel, X_test_rel
+
+    if feature_type == 'bin':
+        print("using binary frequency (present or not)")
+
+        # convert to binary values
+        X_train_bool = X_train > 0
+        X_dev_bool = X_dev > 0
+        X_test_bool = X_test > 0
+
+        X_train, X_dev, X_test = X_train_bool, X_dev_bool, X_test_bool
+
 
     print("Feature shapes: ", X_train.shape, X_dev.shape, X_test.shape)
     print(X_train[:3])
@@ -138,12 +125,13 @@ def train_BOW_model(classifier = "ridge",
         model = Ridge()
 
     if classifier == "xgboost":
-        model = xgboost.XGBRegressor(n_estimators = 800, #800, #800
+        model = xgboost.XGBRegressor(n_estimators = 300, #300,
                                      learning_rate = 0.1,
-                                     max_depth = 20, # 20
-                                     #verbosity=2
+                                     max_depth = 10, #10,
                                      random_state = 1,
-                                     subsample=1 # was ist das genau? "fraction of observations to be randomly samples for each tree"
+                                     subsample= 1, # 1# was ist das genau? "fraction of observations to be randomly samples for each tree"
+                                     #tree_method='gpu_hist', # doesn't work
+                                     #gpu_id=0
                                      )
 
     print("using model:", model)
@@ -159,7 +147,7 @@ def train_BOW_model(classifier = "ridge",
     df_dev["true"] = y_dev
     df_dev["pred"] = pred_dev
     print(df_dev.head())
-    df_dev.to_csv(utils.OUTPUT / "predictions" / "dev" / f'BOW_{classifier}_{feature_type}_{str(max_features)}.tsv', sep="\t", index=True,
+    df_dev.to_csv(utils.OUTPUT / "predictions" / "dev" / f'BOW_{vectorizer_type}_{classifier}_{feature_type}_{str(max_features)}_{preprocessing}.tsv', sep="\t", index=True,
                   index_label="articleId")
 
 
@@ -170,7 +158,7 @@ def train_BOW_model(classifier = "ridge",
     df_test["true"] = y_test
     df_test["pred"] = pred_test
     print(df_test.head())
-    df_test.to_csv(utils.OUTPUT / "predictions" / "test" / f'BOW_{classifier}_{feature_type}_{str(max_features)}.tsv', sep="\t", index=True,
+    df_test.to_csv(utils.OUTPUT / "predictions" / "test" / f'BOW_{vectorizer_type}_{classifier}_{feature_type}_{str(max_features)}_{preprocessing}.tsv', sep="\t", index=True,
                   index_label="articleId")
 
     #if target == "log_avgTimeOnPage":
@@ -192,8 +180,8 @@ def train_BOW_model(classifier = "ridge",
     print("pred:", [ p.round(2) for p in pred_dev[:10] ])
 
     # saving model with pickle
-    #target_path = utils.OUTPUT / 'saved_models' / f'BOW_{classifier}_{feature_type}_{str(max_features)}.pkl'
-    #pickle.dump(model, open(target_path, 'wb'))
+    target_path = utils.OUTPUT / 'saved_models' / f'BOW_{vectorizer_type}_{classifier}_{feature_type}_{str(max_features)}_{preprocessing}.pkl'
+    pickle.dump(model, open(target_path, 'wb'))
 
 
 
@@ -203,16 +191,17 @@ PUBLISHER = 'NOZ'
 
 
 # preprocessor
-preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=True, delete_punctuation=True)
-print(preprocessor.delete_stopwords, preprocessor.lemmatize, preprocessor.delete_punctuation)
+preprocessor = utils.Preprocessor(delete_stopwords=False, lemmatize=False, delete_punctuation=True)
+preprocessing = f'{preprocessor.delete_stopwords}{preprocessor.lemmatize}{preprocessor.delete_punctuation}'
+print(preprocessing)
 
 train_BOW_model(classifier= "ridge", #"ridge", #"xgboost",
                 vectorizer_type= "CountVectorizer", #"CountVectorizer", # "TfidfVectorizer"
                 publisher = PUBLISHER,
                 preprocessor = preprocessor,
                 feature_type = 'abs',
-                load = False,
-                max_features = 10000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
+                load = True,
+                max_features = 50000, #500, #TODO: warum ist hier so wenig deutlich besser als zB 1000?
                 text_base = 'article_text', #'teaser', #'text_preprocessed',
                 target = TARGET
                 )
@@ -222,29 +211,23 @@ train_BOW_model(classifier= "ridge", #"ridge", #"xgboost",
 # model = pickle.load(open(target_path, 'rb'))
 
 
-# bei max_features = 300, Pearson 0.666, MAE 0.187, MSE 0.072
-
-# neue Daten (groß, aber nur SZ und TV), modelling avgTimeOnPage
-# bei 100: r: 0.214, MSE: 1613.294, MAE: 29.080
-# bei 500: r: 0.295, MSE: 1544.790, MAE:  28.463
-# bei 1000 : r: 0.319, MSE: 1523.388, MAE: 28.100
-# bei 2000: r: 0.343, MSE: 1397.636, 27.701
-# bei 5000: r: 0.323, MSE: 1581.458, MAE: 28.897
-
-# neuere Daten (mit NOZ dabei)
-# bei 100: r: 0.541, MSE: 9148.856, MAE: 57.0092
-# bei 500: r: 0.577, MSE: 9284.085, MAE: 54.655
-
-# nur innerhalb NOZ:
-#500 Pearson: 0.469, MSE: 19189.622, MAE: 69.543
-
-# aktuell (NOZ):
+# Count Vectorizer + ridge
 # 500: Pearson:  0.47, MSE:  15171.37, MAE:  65.71, RAE: 92.201
 # 200: Pearson:  0.45, MSE:  15498.22, MAE:  65.13, RAE: 91.386
 # 1000: Pearson:  0.48, MSE:  15163.24, MAE:  66.56, RAE: 93.392
+# 1000 (true,true,true) 0.47
+# 1000 true true true Pearson: 0.474 Spearman: 0.42  MSE:  15197.4381 MAE:  66.757   RAE: 93.667      ***** current best
+# 5000 true true true Pearson: 0.457 Spearman 0.37   MSE:  16468.7639 MAE:  77.114  RAE: 108.1987
 # 10000 rel 0.37, abs: 0.40, bin: 0.40
 # 10000 (true,true,true) 0.40
-# 1000 (true,true,true) 0.47
+# 10000 true true true Pearson: 0.39 Spearman: 0.309 MSE:  20569.1089 MAE:  92.066   RAE: 129.177
+# 10000 false false true ... Pearson:  0.39 Spearman: 0.329 MSE:  20589.844  MAE:  91.566 RAE: 128.47
+# 50000 false true true Pearson 0.29 Spearman 0.232  MSE:  32424.187  MAE:  124.643  RAE: 174.886
+# 50000 true true true Pearson: 0.315 Spearman: 0.268 MSE:  30769.86 MAE:  119.180 RAE: 167.220
+# 50000 false false true ... Pearson: 0.2885
+# 100000 false true true Pearson: 0.379 Spearman: 0.323 MSE:  22134.239 MAE:  95.468 RAE: 133.9
+
+
 
 # CountVectorizer + xgboost
 # 500: Pearson: 0.48
@@ -252,6 +235,41 @@ train_BOW_model(classifier= "ridge", #"ridge", #"xgboost",
 # 10000: Pearson: 0.49 (binary: 0.47)
 # 10000 (false true true) 0.51, 60, 84, 14450
 # 50000 (false true true) 0.50, 60, 84
+
+# 1000 true true true  XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#       Pearson: 0.461 Spearman: 0.5351 MSE:  15486.54 MAE:  62.205 RAE: 87.27
+# 5000 true true true XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#       Pearson: 0.481 Spearman: 0.568 MSE:  15027.175 MAE:  60.627 RAE: 85.066
+# 10000 false true true, XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#       Pearson 0.525 Spearman: 0.562 MSE:  14129.26 MAE:  59.51 RAE: 83.506
+# 10000 false true true XGBRegressor(max_depth=50, random_state=1)
+#      Pearson 0.471  Spearman:  0.5194  MSE:  15206.427  MAE:  62.5596  RAE: 87.776
+# 10000 false true true XGBRegressor(max_depth=20, n_estimators=500, random_state=1)
+#      Pearson: 0.509  Spearman:  0.562 MSE:  14451.583 MAE:  60.00  RAE: 84.190
+# 10000 false true true XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#      Pearson: 0.525 Spearman: 0.562 MSE:  14129.268 MAE:  59.516 RAE: 83.506
+# 10000 true true true XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#      Pearson:  0.499 Spearman: 0.557 MSE:  14657.376 MAE:  60.81 RAE: 85.32
+# 10000 false false true ... max_dept 10 n_estimators 300
+#      Pearson: 0.547 Spearman: 0.565  MSE:  13687.544  MAE:  59.080 RAE: 82.894       ******* current best
+
+# 50000 false true true XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#      Pearson:  0.531  Spearman:  0.569  MSE:  14014.80  MAE:  58.82  RAE: 82.53
+# 50000 false true true XBGRegressor(max_depth=5, n_estimators 100, random_state=1)
+#      Pearson: 0.506 Spearman: 0.543 MSE:  14596.383 MAE:  59.416 RAE: 83.366
+# 50000 true true true XGBRegressor(max_depth=10, n_estimators=300, random_state=1)
+#      Pearson: 0.484  Spearman: 0.553  MSE:  14965.402  MAE:  60.390  RAE: 84.733
+# 50000 false false true ... (10, 300)
+#      Pearson:  (0.503 Spearman: 0.559  MSE:  14582.689  MAE:  59.9144 RAE: 84.065
+# 100000 false true true (max_depth = 5, n_estimators = 100)
+#        Pearson: 0.504 Spearmanr 0.545 MSE:  14662.452 MAE:  59.361 RAE: 83.289
+# 100000 false true true (max depth = 10, n_estimators = 300
+#        Pearson: 0.528 Spearman 0.569 MSE:  14092.393 MAE:  58.555  RAE: 82.157
+# 100000 false true true (max_depth 20, n_estimators = 300
+#        Pearson: 0.501 Spearman 0.568 MSE:  14635.104  MAE:  59.772 RAE: 83.866
+# 100000 false true true (max_depth = 10, n_estimators = 800)
+#        Pearson: 0.530 Spearman 0.573  MSE:  14035.741 MAE:  58.700 RAE: 82.362
+
 
 # tfidf + ridge
 # 500: 0.41

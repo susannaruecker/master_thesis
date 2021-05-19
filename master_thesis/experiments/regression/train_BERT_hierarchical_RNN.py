@@ -24,11 +24,11 @@ print('Using device:', device)
 
 
 # HYPERPARAMETERS
-EPOCHS = 50
+EPOCHS = 30
 GPU_BATCH = 1 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-SECTION_SIZE = 128 #256 #512 #todo: smaller or bigger?
-MAX_SECT = 10 # hier waren bei 512 immer 5
+SECTION_SIZE = 512 #256 #512 #todo: smaller or bigger?
+MAX_SECT = 5 # hier waren bei 512 immer 5
 
 LR = 1e-5
 MASK_WORDS = False
@@ -80,22 +80,29 @@ print("textlength:", d['textlength'])
 print("BERT_tokens:", d['BERT_tokens'])
 
 
+LOAD_CHECKPOINT = True #True # False
 
 # loss and optimizer
-optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR)
-optimizer_ffn = optim.AdamW(model.ffn.parameters(), lr = 1e-3)
-optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr = 1e-5)
+optimizer_bert = optim.AdamW(model.bert.parameters(), lr = LR) # bisher LR
+optimizer_ffn = optim.AdamW(model.out.parameters(), lr = 1e-3) # bisher 1e-3
+optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr = 1e-5) # bisher 1e-5
+
+if LOAD_CHECKPOINT == True:
+    optimizer_bert = optim.AdamW(model.bert.parameters(), lr=LR)  # bisher LR
+    optimizer_ffn = optim.AdamW(model.out.parameters(), lr=1e-3) # bisher 1e-3
+    optimizer_rnn = optim.AdamW(model.rnn.parameters(), lr=1e-5)  # bisher 1e-5
 
 loss_fn = nn.MSELoss()  # mean squared error
 
-LOAD_CHECKPOINT = False #True # False
 if LOAD_CHECKPOINT == True:
     print("using pretrained weights from a BERT baseline")
     identifier = identifier + '_pretrained'
     ### NEW: loading checkpoint (specific layer weights) from a BERT baseline
 
     checkpoint_path = utils.OUTPUT / 'saved_models' / \
-                      'BertFFN_FIXLEN256_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-04-22_11:38:31'
+                      'BertFFN_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-03-03_00:13:33'
+                      #'BertFFN_FIXLEN400_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-05-09_15:54:50'
+                      #'BertFFN_FIXLEN256_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-04-22_11:38:31'
                       #'BertFFN_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-03-03_00:13:33'
                       #'BertFFN_FIXLEN128_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_splitOptim_2021-02-13_22:43:53'
                       #'BertFFN_FIXLEN128_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-02-12_20:24:28'

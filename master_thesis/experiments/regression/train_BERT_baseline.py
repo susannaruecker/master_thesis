@@ -25,8 +25,8 @@ print('Using device:', device)
 # get pretrained model and tokenizer from huggingface's transformer library
 PRE_TRAINED_MODEL_NAME = 'bert-base-german-cased'
 
-MODEL = 'BertSequence'
-#MODEL = 'BertFFN'
+#MODEL = 'BertSequence'
+MODEL = 'BertFFN'
 #MODEL = 'BertAveraging'
 
 
@@ -43,9 +43,9 @@ model.to(device)
 
 # HYPERPARAMETERS
 EPOCHS = 30
-GPU_BATCH = 4 # what can actually be done in one go on the GPU
+GPU_BATCH = 6 # what can actually be done in one go on the GPU
 BATCH_SIZE = 32 # nr of samples before update step
-FIXED_LEN = 512 #512 #128 #512
+FIXED_LEN = 400 #512 #512 #128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 
@@ -54,7 +54,7 @@ START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 #MIN_LEN = 510 # min window size (not used im FIXED_LEN is given)
 #START = None
 
-LR = 0.001 # todo: change back to 1e-5!
+LR = 1e-5 # todo: change back to 1e-5!
 FRACTION = 1
 
 TARGET = 'avgTimeOnPage'

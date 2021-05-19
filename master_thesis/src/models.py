@@ -298,7 +298,7 @@ class BertHierarchicalRNN(nn.Module):
         self.rnn = nn.GRU(768, 768, 2, batch_first=True)
         #self.rnn = nn.LSTM(768, 512, 2, batch_first=True)
 
-        self.ffn = get_FFN(n_outputs=1, input_size=768, nr_layers=2)
+        self.out = get_FFN(n_outputs=1, input_size=768, nr_layers=2)
 
     def forward(self, section_input_ids, section_attention_mask):
         nr_sections = section_input_ids.size()[1]
@@ -324,7 +324,7 @@ class BertHierarchicalRNN(nn.Module):
         #print("hidden_state_last_timestep", hidden_state_last_timestep.size())
         #todo: ist das so richtig?
 
-        out = self.ffn(hidden_state_last_timestep[-1,:,:]) # last hidden state, last timestep, LAST LAYER
+        out = self.out(hidden_state_last_timestep[-1,:,:]) # last hidden state, last timestep, LAST LAYER
         #print("out", out.size())
 
         return out

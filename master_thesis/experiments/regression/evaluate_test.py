@@ -24,31 +24,36 @@ print('Using device:', device)
 #model = models.BertAveraging(n_outputs=1) # done
 #identifier = 'BertAveraging_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-03-31_16:45:24'
 
-model = models.BertSequence(n_outputs=1) # TODO: hatte wohl den checkpoint gelöscht... trainiert neu
+#model = models.BertSequence(n_outputs=1) # done
 #identifier = 'BertSequence_FIXLEN512_MINLENNone_START0_EP30_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-05-04_19:04:19'
-identifier = 'BertSequence_FIXLEN128_MINLENNone_START0_EP25_BS5_LR0.0001_avgTimeOnPage_NOZ' # todo: das ist mit 128 aber ist ja auch egal...
 
 #model = models.BertTextlength(n_outputs = 1) # done
 #identifier = 'BertTextlength_FIXLEN512_MINLENNone_START0_EP40_BS32_LR1e-05_avgTimeOnPage_NOZ_2021-04-27_11:37:43'
 
 
-#model = models.BertHierarchical(n_outputs = 1, max_sect= 5) # done
+model = models.BertHierarchical(n_outputs = 1, max_sect= 5) # done
 #identifier = 'BertHierarchical_SECTIONSIZE400_MAX_SECT6_EP100_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_2021-04-02_12:07:01'
 #identifier = 'BertHierarchical_SECTIONSIZE512_MAX_SECT5_EP100_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_2021-04-08_15:29:27'
 #identifier = 'BertHierarchical_SECTIONSIZE512_MAX_SECT5_EP50_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_pretrained_2021-04-19_12:21:17'
-#SECTION_SIZE = 512
-#MAX_SECT = 5
+#identifier = 'BertHierarchical_SECTIONSIZE400_MAX_SECT6_EP50_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_pretrained_2021-05-10_11:23:00'
+#identifier = 'BertHierarchical_SECTIONSIZE400_MAX_SECT6_EP20_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_pretrained_2021-05-13_13:05:50'
+#identifier = 'BertHierarchical_SECTIONSIZE400_MAX_SECT6_EP20_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_pretrained_2021-05-13_14:51:56' # hier waren LR anders
+identifier = 'BertHierarchical_SECTIONSIZE512_MAX_SECT5_EP20_BS32_LR1e-05_avgTimeOnPage_NOZ_weighted_mean_pretrained_2021-05-14_11:34:32'
+SECTION_SIZE = 512
+MAX_SECT = 5
 
-#model = models.BertHierarchicalRNN(n_outputs=1, max_sect= 5) # done
+#model = models.BertHierarchicalRNN(n_outputs=1, max_sect= 6) # done
 #identifier = 'BertHierarchicalRNN_SECTIONSIZE400_MAX_SECT6_EP50_BS32_LR1e-05_avgTimeOnPage_NOZ_GRU_2021-04-04_11:35:50'
 #identifier = 'BertHierarchicalRNN_SECTIONSIZE512_MAX_SECT5_EP50_BS32_LR1e-05_avgTimeOnPage_NOZ_GRU_2021-04-14_11:14:43'
 #identifier = 'BertHierarchicalRNN_SECTIONSIZE512_MAX_SECT5_EP50_BS32_LR1e-05_avgTimeOnPage_NOZ_GRU_pretrained_2021-04-20_23:07:20'
-#SECTION_SIZE = 512
-#MAX_SECT = 5
+#identifier = 'BertHierarchicalRNN_SECTIONSIZE400_MAX_SECT6_EP20_BS32_LR1e-05_avgTimeOnPage_NOZ_GRU_pretrained_2021-05-11_10:49:15'
+#SECTION_SIZE = 400
+#MAX_SECT = 6
 
 #EMBS_DIM = 300
 #model = models.CNN(n_outputs=1, embs_dim=EMBS_DIM) # done
 #identifier = 'CNN_FIXLEN800_MINLENNone_START0_EP50_BS32_LR0.0002_avgTimeOnPage_NOZ_2021-03-10_10:15:33'
+####identifier = 'CNN_FIXLEN800_MINLENNone_START0_EP100_BS32_LR0.0001_avgTimeOnPage_NOZ_num_filters_64_2021-03-30_12:54:24'
 
 #MODEL = "BertEmbs"
 #model = models.EmbsFFN(n_outputs=1, input_size=768)
@@ -72,8 +77,8 @@ tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
 # DataSets and DataLoaders
 # ACHTUNG: Je nach Model und Checkpoint anpassen!
 
-GPU_BATCH = 32 # what can actually be done in one go on the GPU
-FIXED_LEN = 512 #512 #128 #512
+GPU_BATCH = 32 # Achtung: für Hierarchical sollte es 1 sein (Collater...) what can actually be done in one go on the GPU
+FIXED_LEN = 400 #512 #128 #512
 MIN_LEN = None # min window size (not used im FIXED_LEN is given)
 START = 0 # random, if FIXED_LEN is specified you probably want to start at 0
 PUBLISHER = 'NOZ'
