@@ -1,5 +1,5 @@
 ## Modellierung von Leseverhalten auf Online-Zeitungsportalen anhand von Deep Learning
-#### Masterarbeit von Susanna Rücker an der FSU Jena in Zusammenarbeit mit INWT Statistics
+#### Masterarbeit von Susanna Rücker an der FSU Jena in Zusammenarbeit mit der INWT Statistics GmbH
 #### Gutachter: [Prof. Dr. Udo Hahn](https://julielab.de/Staff/Hahn/), [Dr. Steffen Wagner](https://www.inwt-statistics.com/home.html)
 
 ### English abstract
@@ -17,7 +17,7 @@ A further analysis gives insights on the dwell time predictions of two models (o
 
 * [Repo mit LaTeX-Files (privates Repository)](https://github.com/susannaruecker/thesis)
 * [zensierte Version (Namen der Zeitungen sind unkenntlich gemacht)](censored_MA_Ruecker_2021_Modellierung_von_Leseverhalten.pdf)
-* abgegebene, unzensierte Version: auf Anfrage [per Mail](mailto:susanna.ruecker@uni-jena.de)
+* abgegebene, unzensierte Version: auf Anfrage [per Mail](mailto:susannaruecker@posteo.de)
 
 
 ### Disclaimer zum Repository (Update am 10.09.21)
